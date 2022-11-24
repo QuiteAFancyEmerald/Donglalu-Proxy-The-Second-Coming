@@ -1,0 +1,16 @@
+{
+  "name": "donglalu-proxy-the-second-coming",
+  "version": "1.0.1",
+  "description": "Donglalu Proxy the Second Coming is an advanced web proxy service focusing being unblocked by the majority of filters. The successor to Holy Unblocker.",
+  "main": "index.js",
+  "repository": "https://github.com/titaniumnetwork-dev/Donglalu-Proxy-The-Second-Coming.git",
+  "author": "QuiteAFancyEmerald <46467239+QuiteAFancyEmerald@users.noreply.github.com>",
+  "license": "MIT",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "lerna": "^6.0.3"
+  }
+}
