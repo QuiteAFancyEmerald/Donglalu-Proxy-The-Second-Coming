@@ -1,16 +1,45 @@
 {
   "name": "donglalu-proxy-the-second-coming",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Donglalu Proxy the Second Coming is an advanced web proxy service focusing being unblocked by the majority of filters. The successor to Holy Unblocker.",
-  "main": "index.js",
+  "main": "./app/index.js",
   "repository": "https://github.com/titaniumnetwork-dev/Donglalu-Proxy-The-Second-Coming.git",
-  "author": "QuiteAFancyEmerald <46467239+QuiteAFancyEmerald@users.noreply.github.com>",
+  "author": "Titanium Network",
   "license": "MIT",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
+  "dependencies": {
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^13.5.0",
+    "react": "^18.2.0",
+    "react-app-rewired": "^2.2.1",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "web-vitals": "^2.1.4"
+  },
+  "scripts": {
+    "start": "react-app-rewired start",
+    "build": "set BUILD_PATH=website && react-app-rewired build",
+    "test": "react-app-rewired test",
+    "cypress:open": "cypress open"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
   "devDependencies": {
-    "lerna": "^6.0.3"
+    "cypress": "^11.2.0"
   }
 }
