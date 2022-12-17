@@ -22,15 +22,6 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -38,26 +29,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const sourceRandomization_1 = require("./controllers/sourceRandomization");
 const app = (0, express_1.default)();
 const dir_build = path.join(__dirname, 'static');
 const pages = {
     'index': 'index.html',
     'test': 'test.html'
 };
-app.get('/:page', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.get('/:page', async (req, res) => {
     const page = req.params.page;
     if (!pages[page]) {
         return res.redirect('/');
     }
     try {
-        const fileContents = yield fs.promises.readFile(path.join(dir_build, pages[page]), 'utf8');
-        res.send(fileContents);
+        const filePath = path.join(dir_build, pages[page]);
+        const fileContents = await fs.promises.readFile(filePath, 'utf8');
+        const paintedContents = await (0, sourceRandomization_1.paintSource)(fileContents);
+        res.send(paintedContents);
     }
     catch (error) {
         console.error(error);
         res.status(404).send('Where is the page?');
     }
-}));
+});
 app.use(express_1.default.static(dir_build));
-app.listen(3000, () => console.log("Ready!"));
+app.listen(3000, () => console.log("Very much up!"));
 //# sourceMappingURL=index.js.map

@@ -4,7 +4,7 @@
 		  "es5",
 		  "es6"
 	   ],
-	   "target": "es6",
+	   "target": "es2022",
 	   "module": "commonjs",
 	   "moduleResolution": "node",
 	   "outDir": "./build",
