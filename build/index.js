@@ -31,27 +31,30 @@ const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const sourceRandomization_1 = require("./controllers/sourceRandomization");
 const app = (0, express_1.default)();
+const port = process.env.PORT || 3000;
 const dir_build = path.join(__dirname, 'static');
 const pages = {
     'index': 'index.html',
     'test': 'test.html'
 };
-app.get('/:page', async (req, res) => {
-    const page = req.params.page;
-    if (!pages[page]) {
-        return res.redirect('/');
-    }
+app.get('/:page?', async (req, res) => {
+    const page = req.params.page || 'index';
     try {
-        const filePath = path.join(dir_build, pages[page]);
-        const fileContents = await fs.promises.readFile(filePath, 'utf8');
-        const paintedContents = await (0, sourceRandomization_1.paintSource)(fileContents);
-        res.send(paintedContents);
+        if (typeof dir_build === 'string' && typeof pages[page] === 'string') {
+            const filePath = path.join(dir_build, pages[page]);
+            const fileContents = fs.readFileSync(filePath, 'utf8');
+            const paintedContents = await (0, sourceRandomization_1.paintSource)(fileContents);
+            res.send(paintedContents);
+        }
+        else {
+            res.status(500).send('Something went wrong');
+        }
     }
     catch (error) {
         console.error(error);
-        res.status(404).send('Where is the page?');
+        res.status(500).send('Something went wrong');
     }
 });
 app.use(express_1.default.static(dir_build));
-app.listen(3000, () => console.log("Very much up!"));
+app.listen(port, () => console.log("DLPCC is now up on " + port + ". Be sure to join our Discord at discord.gg/unblock!"));
 //# sourceMappingURL=index.js.map

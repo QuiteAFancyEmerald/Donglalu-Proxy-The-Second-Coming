@@ -1,6 +1,6 @@
 {
   "name": "donglalu-proxy-the-second-coming",
-  "version": "2.0.138294",
+  "version": "2.0.289598",
   "description": " DLPCC, the seclusive web proxy service that allows for quarantining activity. Escape the confinement of web filters and restrictive policy management. Be able to host your own unblocker today for improved isolation today!",
   "main": "./app/index.js",
   "repository": "https://github.com/titaniumnetwork-dev/Donglalu-Proxy-The-Second-Coming.git",
