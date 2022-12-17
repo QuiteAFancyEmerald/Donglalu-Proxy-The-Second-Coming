@@ -1,0 +1,12 @@
+body {
+    font-family: "Roboto", sans-serif;
+    margin: 0;
+    background: #111;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    animation: fadeInAnimation ease-in-out 0.3s;
+    animation-iteration-count: 1;
+    animation-fill-mode: forwards;
+}
