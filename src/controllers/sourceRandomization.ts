@@ -1,24 +1,33 @@
 import axios from 'axios';
 
 async function randomParagraph() {
-  const randomTextURL = `https://story-shack-cdn-v2.glitch.me/generators/random-paragraph-generator`
+  const randomTextURL = [
+    'https://story-shack-cdn-v2.glitch.me/generators/random-paragraph-generator',
+    'https://story-shack-cdn-v2.glitch.me/generators/writing-prompt-generator',
+    'https://story-shack-cdn-v2.glitch.me/generators/random-question-generator'
+  ]
+
+  const url = randomTextURL[Math.floor(Math.random() * randomTextURL.length)];
 
   try {
-    const response = await axios.get(randomTextURL)
+    const response = await axios.get(url);
+
     if (response.status === 200) {
       const name: string = response.data.data.name;
       return name
     } else {
-      throw new Error(`API request failed with status code ${response.status}`)
+
+      throw new Error(`API request failed with status code ${response.status}`);
     }
   } catch (error) {
-    console.error(error)
-    throw error
+
+    console.error(error);
+    throw error;
   }
 }
 
 async function randomList(): Promise<string[]> {
-  const size = Math.floor(Math.random() * (10 - 5 + 1)) + 5;
+  const size = Math.floor(Math.random() * (10 - 3 + 1)) + 3;
   const list: string[] = [];
   for (let i = 0; i < size; i++) {
     const paragraph = await randomParagraph();

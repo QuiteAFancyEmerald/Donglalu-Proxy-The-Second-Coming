@@ -6,9 +6,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.paintSource = void 0;
 const axios_1 = __importDefault(require("axios"));
 async function randomParagraph() {
-    const randomTextURL = `https://story-shack-cdn-v2.glitch.me/generators/random-paragraph-generator`;
+    const randomTextURL = [
+        'https://story-shack-cdn-v2.glitch.me/generators/random-paragraph-generator',
+        'https://story-shack-cdn-v2.glitch.me/generators/writing-prompt-generator',
+        'https://story-shack-cdn-v2.glitch.me/generators/random-question-generator'
+    ];
+    const url = randomTextURL[Math.floor(Math.random() * randomTextURL.length)];
     try {
-        const response = await axios_1.default.get(randomTextURL);
+        const response = await axios_1.default.get(url);
         if (response.status === 200) {
             const name = response.data.data.name;
             return name;
@@ -23,7 +28,7 @@ async function randomParagraph() {
     }
 }
 async function randomList() {
-    const size = Math.floor(Math.random() * (10 - 5 + 1)) + 5;
+    const size = Math.floor(Math.random() * (10 - 3 + 1)) + 3;
     const list = [];
     for (let i = 0; i < size; i++) {
         const paragraph = await randomParagraph();
