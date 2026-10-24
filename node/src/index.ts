@@ -1,7 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHmac, randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { chmodSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { binPath, clientPath, hasBundledBinary } from "./path.js";
+
+export { binPath, clientPath, hasBundledBinary };
 
 export interface RelayOptions {
   /** Master switch. When false nothing is spawned, routeRequest() passes and clientScript() returns "". */
@@ -10,7 +13,7 @@ export interface RelayOptions {
   secret: string;
   /** Spawn dlpcc-relay as a child process. Set false when it runs on its own (systemd, docker). Default true. */
   spawn?: boolean;
-  /** Path to the dlpcc-relay binary. Default "dlpcc-relay" from PATH. */
+  /** Path to the dlpcc-relay binary. Default is the prebuilt one for this platform, else "dlpcc-relay" from PATH. */
   binary?: string;
   /** Public IPv4 of the box, advertised for relayed media. Required when spawning. */
   relayIp?: string;
@@ -49,7 +52,7 @@ const HOST_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-
 
 let clientSource: string | undefined;
 function loadClient(): string {
-  return (clientSource ??= readFileSync(new URL("../client.js", import.meta.url), "utf8"));
+  return (clientSource ??= readFileSync(clientPath, "utf8"));
 }
 
 export class Relay {
@@ -69,6 +72,10 @@ export class Relay {
   async start(): Promise<void> {
     if (!this.enabled || this.opts.spawn === false || this.child) return;
     if (!this.opts.relayIp) throw new Error("dlpcc: relayIp is required to spawn the relay");
+    if (!this.opts.binary && hasBundledBinary && process.platform !== "win32") {
+      // npm doesn't keep the exec bit on binaries built on Windows.
+      chmodSync(binPath, 0o755);
+    }
     this.stopping = false;
     await this.launch();
   }
@@ -148,7 +155,7 @@ export class Relay {
 
   private launch(): Promise<void> {
     const o = this.opts;
-    const child = spawn(o.binary ?? "dlpcc-relay", [], {
+    const child = spawn(o.binary ?? (hasBundledBinary ? binPath : "dlpcc-relay"), [], {
       stdio: ["ignore", "inherit", "inherit"],
       env: {
         ...process.env,

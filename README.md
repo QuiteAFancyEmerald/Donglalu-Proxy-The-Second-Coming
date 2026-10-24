@@ -6,51 +6,13 @@ on `RTCPeerConnection` keep running on networks that block UDP. Deploy it next
 to your proxy service and the stream leaves over 443, blending in with the rest of
 your traffic.
 
-Made for Scramjet and Wisp proxies, which already tunnel page traffic but leave
-WebRTC out in the open.
-
-## Why this exists
-
-Scramjet + Wisp handles `fetch`, XHR and WebSockets, because those go through
-JavaScript the proxy can rewrite. `RTCPeerConnection` doesn't. Once a page
-makes one, the browser's own network stack sends ICE/DTLS/SRTP over UDP
-straight to the remote server. The proxy never sees those packets, the filter
-blocks the UDP, and you get a black screen after signaling works fine.
-GeForce NOW is the usual example.
-
-Browsers already have a fallback for this: TURN over TLS. If the only ICE
-server is a `turns:` URL on port 443 and the transport policy is `relay`, the
-browser sends all media to that server inside a TLS connection, and the server
-forwards it on as UDP from its side. DLPCC is that server, plus the pieces that
-make it fit a proxy setup:
-
-- **Same host, same cert.** nginx splits port 443 by peeking at the TLS
-  handshake: page loads offer ALPN, the browser's TURN client doesn't. So
-  `turns:example.com:443` works on every mirror with the certificate you
-  already have. No `turn.` subdomains, no extra DNS records.
-- **Any host.** Credentials and the TURN URL come from whatever hostname the
-  visitor used, so one relay serves a pile of mirrors.
-- **A client patch.** A small script wraps `RTCPeerConnection` in the proxied
-  page so it uses the relay no matter what ICE servers the site asks for.
-- **Short-lived credentials.** The relay never stores users. Your server signs
-  a credential with a shared secret (the standard TURN REST scheme), the relay
-  checks the signature and the expiry.
-
-## Why not just use Wisp for this?
-
-Wisp does have UDP streams, but the browser's WebRTC stack can't use them.
-Its ICE agent only talks to TURN servers over UDP, TCP or TLS, and there's no
-API to give it a WebSocket. Getting media through Wisp would mean rebuilding
-WebRTC in JS/WASM. So the two run next to each other: same box, same port 443,
-same hostnames, Wisp for page traffic and DLPCC for media.
-
-## Pieces
+## Structure
 
 ```
 cmd/dlpcc-relay/      the Go relay binary
 internal/relay/       TURN server, credentials, peer filter, HTTP endpoints
 web/client.js         the browser patch (embedded in the binary)
-node/                 npm package for Node/TS apps
+node/                 npm package: prebuilt relay + Node/TS wrapper
 deploy/nginx/         stream config for 443 + an example site
 deploy/systemd/       unit file and env example
 ```
@@ -130,7 +92,7 @@ selected candidate pair should be `relay` with protocol `tls`.
 ## Using it from Node (invisiproxy etc.)
 
 ```sh
-cd node && npm install && npm run build
+npm install dlpcc
 ```
 
 ```ts
@@ -154,7 +116,7 @@ server.on("upgrade", (req, socket, head) => {
 });
 ```
 
-The wrapper spawns `dlpcc-relay` with your settings, restarts it if it
+The wrapper spawns the relay with your settings, restarts it if it
 crashes, and mints credentials in-process, so the relay's own HTTP listener
 is switched off. If you'd rather inline the patch when rendering HTML, use
 `relay.clientScript(host)`. It's already escaped for a `<script>` tag.
@@ -231,8 +193,13 @@ Every flag also reads `DLPCC_<NAME>` from the environment.
 
 ```sh
 go test ./...
-cd node && npm run build
+cd node && npm install
+npm run build:bins   # cross-compiles bin/<platform>-<arch>/, needs Go 1.25+
+npm run build
 ```
+
+`npm pack` and `npm publish` run both builds. Set `GO` if `go` isn't on
+PATH, or `DLPCC_TARGETS=linux-x64` to build one platform.
 
 ## License
 

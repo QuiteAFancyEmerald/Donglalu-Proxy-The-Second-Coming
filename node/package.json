@@ -1,8 +1,21 @@
 {
   "name": "dlpcc",
   "version": "0.1.0",
-  "description": "Node wrapper for the DLPCC TURN relay: spawn it, mint credentials, serve the WebRTC client patch.",
+  "description": "TURN relay for WebRTC behind a proxy, with prebuilt binaries and a Node wrapper: spawn it, mint credentials, serve the client patch.",
   "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/QuiteAFancyEmerald/DLPCC.git",
+    "directory": "node"
+  },
+  "keywords": [
+    "turn",
+    "webrtc",
+    "relay",
+    "wisp",
+    "scramjet",
+    "proxy"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,15 +23,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./path": {
+      "types": "./dist/path.d.ts",
+      "default": "./dist/path.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "bin",
     "client.js"
   ],
   "scripts": {
+    "build:bins": "node scripts/build-bins.mjs",
     "build": "node scripts/copy-client.mjs && tsc",
-    "prepack": "npm run build"
+    "prepack": "npm run build:bins && npm run build"
   },
   "engines": {
     "node": ">=18"
