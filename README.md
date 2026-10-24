@@ -1,12 +1,13 @@
 # Donglalu Proxy The Second Coming (DLPCC)
 
-WebRTC that gets through the filter. DLPCC is a TURN relay that hides behind
-your proxy site's HTTPS port, so game streaming, video calls and anything else
-built on `RTCPeerConnection` keep working on networks that block UDP. Run it
-next to your own unblocker and the media goes out over 443 like everything else.
+Keep WebRTC working behind the filter. DLPCC is a TURN relay that shares your
+proxy site's HTTPS port, so game streaming, video calls and anything else built
+on `RTCPeerConnection` keep running on networks that block UDP. Deploy it next
+to your proxy service and the stream leaves over 443, blending in with the rest of
+your traffic.
 
-Built for Scramjet/Wisp style proxies, where page traffic is already tunneled
-but WebRTC isn't.
+Made for Scramjet and Wisp proxies, which already tunnel page traffic but leave
+WebRTC out in the open.
 
 ## Why this exists
 
