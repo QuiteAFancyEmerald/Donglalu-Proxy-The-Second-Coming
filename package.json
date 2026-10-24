@@ -1,12 +1,11 @@
 {
   "name": "dlpcc",
   "version": "0.1.0",
-  "description": "TURN relay for WebRTC behind a proxy, with prebuilt binaries and a Node wrapper: spawn it, mint credentials, serve the client patch.",
+  "description": "WebRTC TURN relay for Wisp/Scramjet proxies behind nginx: prebuilt Go relay plus a Node wrapper that spawns it, signs credentials and serves the client patch.",
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/QuiteAFancyEmerald/DLPCC.git",
-    "directory": "node"
+    "url": "git+https://github.com/QuiteAFancyEmerald/DLPCC.git"
   },
   "keywords": [
     "turn",
@@ -33,11 +32,12 @@
   "files": [
     "dist",
     "bin",
-    "client.js"
+    "src/client.js"
   ],
   "scripts": {
     "build:bins": "node scripts/build-bins.mjs",
-    "build": "node scripts/copy-client.mjs && tsc",
+    "build": "tsc",
+    "test": "go test ./relay && npm run build && node --test \"test/*.test.mjs\"",
     "prepack": "npm run build:bins && npm run build"
   },
   "engines": {

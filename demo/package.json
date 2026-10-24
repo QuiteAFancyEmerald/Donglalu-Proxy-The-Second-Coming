@@ -1,0 +1,18 @@
+{
+  "name": "dlpcc-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "start": "vite build && node server.js"
+  },
+  "dependencies": {
+    "chemicaljs": "^3.1.2",
+    "dlpcc": "file:.."
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte": "^5.57.2",
+    "vite": "^8.3.5"
+  }
+}

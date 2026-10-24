@@ -1,30 +1,26 @@
-package relay
+package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"sync"
-	"time"
 
 	"github.com/pion/logging"
 	"github.com/pion/turn/v4"
 )
 
-// Server runs the TURN relay and, optionally, the credential HTTP endpoints.
+// Server is the TURN relay. nginx feeds it plain TURN over TCP after
+// terminating TLS on 443.
 type Server struct {
 	cfg  *Config
 	turn *turn.Server
-	http *http.Server
 
 	mu     sync.Mutex
 	total  int
 	byUser map[string]int
 }
 
-// Start opens the listeners. It returns once both are serving.
+// Start opens the TURN listener and returns once it is serving.
 func Start(cfg *Config) (*Server, error) {
 	s := &Server{cfg: cfg, byUser: map[string]int{}}
 
@@ -66,34 +62,12 @@ func Start(cfg *Config) (*Server, error) {
 		_ = ln.Close()
 		return nil, err
 	}
-
-	if cfg.HTTPListen != "" {
-		hl, err := net.Listen("tcp", cfg.HTTPListen)
-		if err != nil {
-			_ = s.turn.Close()
-			return nil, fmt.Errorf("http listener: %w", err)
-		}
-		s.http = &http.Server{Handler: Handler(cfg), ReadHeaderTimeout: 10 * time.Second}
-		go func() {
-			if err := s.http.Serve(hl); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				logs.NewLogger("http").Errorf("http server: %v", err)
-			}
-		}()
-	}
-
 	return s, nil
 }
 
-// Close stops both listeners and drops every allocation.
+// Close stops the listener and drops every allocation.
 func (s *Server) Close() error {
-	var errs []error
-	if s.http != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		errs = append(errs, s.http.Shutdown(ctx))
-	}
-	errs = append(errs, s.turn.Close())
-	return errors.Join(errs...)
+	return s.turn.Close()
 }
 
 func (s *Server) quota(username, _ string, _ net.Addr) bool {
