@@ -1,4 +1,4 @@
-module github.com/QuiteAFancyEmerald/DLPCC
+module github.com/QuiteAFancyEmerald/Donglalu-Proxy-The-Second-Coming
 
 go 1.25.3
 

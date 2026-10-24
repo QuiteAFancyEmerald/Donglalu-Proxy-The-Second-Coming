@@ -5,7 +5,11 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/QuiteAFancyEmerald/DLPCC.git"
+    "url": "git+https://github.com/QuiteAFancyEmerald/Donglalu-Proxy-The-Second-Coming.git"
+  },
+  "homepage": "https://github.com/QuiteAFancyEmerald/Donglalu-Proxy-The-Second-Coming#readme",
+  "bugs": {
+    "url": "https://github.com/QuiteAFancyEmerald/Donglalu-Proxy-The-Second-Coming/issues"
   },
   "keywords": [
     "turn",
