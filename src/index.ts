@@ -9,9 +9,9 @@ export { binPath, clientPath, hasBundledBinary };
 export interface RelayOptions {
   /** Master switch. When false nothing is spawned, routeRequest() passes and clientScript() returns "". */
   enabled?: boolean;
-  /** Shared secret; must match the relay's DLPCC_SECRET. */
+  /** Signs TURN credentials. Passed to the relay so it can check them. `openssl rand -hex 32`. */
   secret: string;
-  /** Spawn dlpcc-relay as a child process. Set false when it runs on its own (systemd, docker). Default true. */
+  /** Spawn the relay. Set false in every process but one when several share a relay (cluster workers). Default true. */
   spawn?: boolean;
   /** Path to the dlpcc-relay binary. Default is the prebuilt one for this platform, else "dlpcc-relay" from PATH. */
   binary?: string;
@@ -21,8 +21,14 @@ export interface RelayOptions {
   relayPorts?: string;
   /** Plain TCP TURN listener nginx forwards to. Default "127.0.0.1:3478". */
   turnListen?: string;
-  /** Port put in turns: URLs. Default 443. */
+  /** Port put in TURN URLs. Default 443. */
   publicPort?: number;
+  /**
+   * Hand out turns: URLs (TLS, through nginx). Set false to point browsers
+   * straight at the relay with turn:, for local testing without nginx; then
+   * publicPort should be turnListen's port. Default true.
+   */
+  tls?: boolean;
   /** Credential lifetime in seconds. Default 12 hours. */
   ttl?: number;
   /** Force iceTransportPolicy "relay". Default true. */
@@ -31,8 +37,16 @@ export interface RelayOptions {
   hosts?: string[];
   /** Path prefix for routeRequest(). Default "/dlpcc". */
   basePath?: string;
-  /** Extra DLPCC_* environment for the child, e.g. { DLPCC_ALLOW_PEERS: "..." }. */
-  env?: Record<string, string>;
+  /** Only relay to these CIDRs, e.g. your streaming provider's ranges. Default: any public address. */
+  allowPeers?: string[];
+  /** Extra CIDRs to block on top of the built-in private ranges. */
+  denyPeers?: string[];
+  /** Concurrent relays per credential, 0 for no limit. Default 8. */
+  maxAllocsPerUser?: number;
+  /** Concurrent relays in total, 0 for no limit. Default 1000. */
+  maxAllocs?: number;
+  /** Relay log level: error, warn, info, debug, trace. Default "warn". */
+  logLevel?: string;
 }
 
 export interface IceServer {
@@ -100,7 +114,7 @@ export class Relay {
     const username = `${expires}:${randomBytes(8).toString("hex")}`;
     const credential = createHmac("sha1", this.opts.secret).update(username).digest("base64");
     const config: IceConfig = {
-      iceServers: [{ urls: [`turns:${name}:${this.opts.publicPort ?? 443}?transport=tcp`], username, credential }],
+      iceServers: [{ urls: [`${this.opts.tls === false ? "turn" : "turns"}:${name}:${this.opts.publicPort ?? 443}?transport=tcp`], username, credential }],
       expires,
     };
     if (this.opts.forceRelay ?? true) config.iceTransportPolicy = "relay";
@@ -163,9 +177,11 @@ export class Relay {
         DLPCC_RELAY_IP: o.relayIp,
         DLPCC_RELAY_PORTS: o.relayPorts ?? "49152-65535",
         DLPCC_TURN_LISTEN: o.turnListen ?? "127.0.0.1:3478",
-        // This process serves the HTTP endpoints, so the relay doesn't need to.
-        DLPCC_HTTP_LISTEN: "",
-        ...o.env,
+        DLPCC_ALLOW_PEERS: o.allowPeers?.join(",") ?? "",
+        DLPCC_DENY_PEERS: o.denyPeers?.join(",") ?? "",
+        DLPCC_MAX_ALLOCS_PER_USER: String(o.maxAllocsPerUser ?? 8),
+        DLPCC_MAX_ALLOCS: String(o.maxAllocs ?? 1000),
+        DLPCC_LOG_LEVEL: o.logLevel ?? "warn",
       },
     });
     this.child = child;

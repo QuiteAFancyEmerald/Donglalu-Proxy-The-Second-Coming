@@ -2,94 +2,47 @@
 
 Keep WebRTC working behind the filter. DLPCC is a TURN relay that shares your
 proxy site's HTTPS port, so game streaming, video calls and anything else built
-on `RTCPeerConnection` keep running on networks that block UDP. Deploy it next
-to your proxy service and the stream leaves over 443, blending in with the rest of
-your traffic.
+on `RTCPeerConnection` keep running on networks that block UDP. The stream
+leaves over 443 on the same hostname as the rest of your site.
 
-## Structure
+Scramjet and Wisp tunnel `fetch`, XHR and WebSockets, but a page's
+`RTCPeerConnection` sends its media over UDP straight from the browser, where
+the proxy can't touch it. DLPCC rewrites every peer connection in proxied pages
+to use one TURN server, `turns:<your host>:443`, with relay-only transport. The
+browser then sends all media to that server inside TLS, and the relay forwards
+it as UDP from your server.
+
+## How it fits together
 
 ```
-cmd/dlpcc-relay/      the Go relay binary
-internal/relay/       TURN server, credentials, peer filter, HTTP endpoints
-web/client.js         the browser patch (embedded in the binary)
-node/                 npm package: prebuilt relay + Node/TS wrapper
-deploy/nginx/         stream config for 443 + an example site
-deploy/systemd/       unit file and env example
+browser ──TLS :443──> nginx ─┬─ ALPN offered (page loads, wisp) ──> your Node app
+                             └─ no ALPN (browser TURN client) ──> dlpcc-relay ──UDP──> e.g. GeForce NOW
 ```
 
-## Setup with nginx
+- **nginx** peeks at each TLS ClientHello. Browsers offer ALPN for page loads;
+  their TURN client doesn't. So both share 443 and your existing certificate,
+  on every mirror, with no extra DNS records.
+- **The Node wrapper** (`dlpcc` on npm) spawns the relay, signs short-lived
+  TURN credentials for whichever hostname the visitor used, and serves the
+  browser patch at `/dlpcc/client.js`.
+- **The relay** is a Go TURN server shipped prebuilt in the package. It checks
+  credentials against the shared secret and refuses to relay to private
+  networks.
+- **The patch** wraps `RTCPeerConnection` so every connection uses the relay,
+  whatever ICE servers the site asks for.
 
-You need nginx with the stream and ssl_preread modules, Go 1.25+, a public
-IPv4, and one certificate per mirror domain (which you already have if the
-site is on HTTPS). A wildcard cert covering several mirrors works too.
+## Layout
 
-**1. Build and install the relay**
-
-```sh
-go build -o dlpcc-relay ./cmd/dlpcc-relay
-sudo install dlpcc-relay /usr/local/bin/
+```
+relay/    Go TURN relay (dlpcc-relay)
+src/      Node wrapper and the browser patch (client.js)
+nginx/    stream config for 443 and an example site
+demo/     Chemical (Scramjet) proxy with DLPCC wired in
+scripts/  cross-compiles the relay into bin/ for the npm package
+test/     Node tests
 ```
 
-or `go install github.com/QuiteAFancyEmerald/DLPCC/cmd/dlpcc-relay@latest`.
-
-**2. Configure it**
-
-```sh
-sudo mkdir -p /etc/dlpcc
-sudo cp deploy/systemd/relay.env.example /etc/dlpcc/relay.env
-sudo chmod 600 /etc/dlpcc/relay.env
-openssl rand -hex 32   # put this in DLPCC_SECRET
-```
-
-Set `DLPCC_RELAY_IP` to the server's public IPv4. If you're behind a cloud
-NAT, that's the public address and `DLPCC_RELAY_BIND` stays `0.0.0.0`.
-
-**3. Open the firewall**
-
-TCP 443 in, which you already have, and UDP `49152-65535` in and out for
-relayed media. Don't expose 3478, 5349 or 8090; they're loopback only.
-
-**4. Hand port 443 to the stream block**
-
-Copy `deploy/nginx/dlpcc-stream.conf` to `/etc/nginx/` and include it at the
-top level of `nginx.conf`, outside `http {}`. Then change every site that
-currently has `listen 443 ssl` to:
-
-```nginx
-listen 127.0.0.1:8443 ssl proxy_protocol;
-set_real_ip_from 127.0.0.1;
-real_ip_header proxy_protocol;
-```
-
-`deploy/nginx/site-example.conf` shows a full site. If your cert directories
-don't match the hostname (wildcards, multi-domain certs), add lines to the
-`$dlpcc_cert_dir` map.
-
-**5. Start it**
-
-```sh
-sudo cp deploy/systemd/dlpcc-relay.service /etc/systemd/system/
-sudo systemctl enable --now dlpcc-relay
-sudo nginx -t && sudo systemctl reload nginx
-curl https://example.com/dlpcc/ice
-```
-
-That should return JSON with a `turns:example.com:443?transport=tcp` URL.
-
-**6. Load the patch in proxied pages**
-
-`/dlpcc/client.js` returns the patch with a fresh credential baked in. It
-has to run inside the proxied page's window **before** the site's own
-scripts, so it needs to go through your proxy's script injection, not into
-your homepage. With Scramjet that means injecting it into rewritten HTML
-ahead of the site's scripts; the details depend on your version. Since the
-patch is served from your own origin rather than the proxied site's, make
-sure the proxy doesn't rewrite its URL.
-
-To check it's working, open `chrome://webrtc-internals` while streaming. The
-selected candidate pair should be `relay` with protocol `tls`.
-
-## Using it from Node (invisiproxy etc.)
+## Using it
 
 ```sh
 npm install dlpcc
@@ -100,10 +53,9 @@ import { createServer } from "node:http";
 import { createRelay } from "dlpcc";
 
 const relay = createRelay({
-  enabled: process.env.DLPCC_ENABLED !== "false",
-  secret: process.env.DLPCC_SECRET!,
-  relayIp: process.env.DLPCC_RELAY_IP,
-  // spawn: false,  // if dlpcc-relay already runs under systemd
+  secret: process.env.DLPCC_SECRET!, // openssl rand -hex 32
+  relayIp: process.env.DLPCC_RELAY_IP, // the server's public IPv4
+  hosts: ["example.com", "*.example2.com"],
 });
 await relay.start();
 
@@ -112,94 +64,169 @@ const server = createServer((req, res) => {
   // ...your app
 });
 server.on("upgrade", (req, socket, head) => {
-  // wisp.routeRequest(req, socket, head) as usual
+  // wisp as usual
 });
+process.on("SIGTERM", () => relay.stop());
 ```
 
-The wrapper spawns the relay with your settings, restarts it if it
-crashes, and mints credentials in-process, so the relay's own HTTP listener
-is switched off. If you'd rather inline the patch when rendering HTML, use
+The package ships `dlpcc-relay` for Linux, macOS and Windows on x64 and arm64,
+so no Go toolchain is needed. The wrapper restarts the relay if it crashes.
+With `enabled: false` nothing is spawned, `routeRequest` passes everything
+through and `clientScript` returns `""`, so call sites can stay in place.
+
+### Getting the patch into proxied pages
+
+The patch has to run inside each proxied window **before** the site's own
+scripts. Load `/dlpcc/client.js` in your proxy's own page (where the Scramjet
+controller runs), then patch each proxied window as Scramjet creates it:
+
+```js
+import { ManagedPlugin } from "@mercuryworkshop/scramjet-controller";
+
+export class DlpccPlugin extends ManagedPlugin {
+  constructor() {
+    super("dlpcc", []);
+  }
+  install(frame) {
+    super.install(frame);
+    // Fires from Scramjet's injected head script, before the site's scripts,
+    // for nested frames too.
+    this.tap(frame.hooks.init.post, (ctx) => window.__dlpcc?.patch(ctx.window));
+  }
+}
+
+controller.createFrame(iframe, { plugins: [new DlpccPlugin()] });
+```
+
+To inline the patch instead of loading it by URL, use
 `relay.clientScript(host)`. It's already escaped for a `<script>` tag.
 
-With `enabled: false` nothing is spawned, `routeRequest` passes every
-request through and `clientScript` returns an empty string, so you can leave
-the call sites in place and turn the feature off from config.
+To check it's working, open `chrome://webrtc-internals` during a call or
+stream. The selected candidate pair should be `relay` with protocol `tls`.
 
-You still need the nginx stream setup above. The Node app only serves the
-endpoints; TURN traffic goes nginx → relay directly.
+### Options
+
+| Option | Default | |
+|---|---|---|
+| `secret` | | Signs credentials; passed to the relay. Required when enabled. |
+| `relayIp` | | Public IPv4 advertised for relayed media. Required to spawn. |
+| `enabled` | `true` | Master switch. |
+| `hosts` | any | Hostnames credentials are issued for. `*.example.com` ok. |
+| `ttl` | `43200` | Credential lifetime in seconds. Must outlive a session. |
+| `allowPeers` | any public | Only relay to these CIDRs, e.g. a provider's ranges. |
+| `denyPeers` | | Extra CIDRs to block. |
+| `maxAllocsPerUser` | `8` | Concurrent relays per credential, 0 for no limit. |
+| `maxAllocs` | `1000` | Concurrent relays in total, 0 for no limit. |
+| `relayPorts` | `49152-65535` | UDP range for relayed media. |
+| `turnListen` | `127.0.0.1:3478` | Where nginx sends decrypted TURN. |
+| `publicPort` | `443` | Port in the TURN URLs browsers get. |
+| `tls` | `true` | `false` hands out `turn:` URLs straight to the relay, for testing without nginx. |
+| `forceRelay` | `true` | Set `iceTransportPolicy: "relay"`. |
+| `basePath` | `/dlpcc` | Prefix for `routeRequest`. |
+| `spawn` | `true` | `false` in all but one process when several share a relay. |
+| `binary` | bundled | Path to your own `dlpcc-relay` build. |
+| `logLevel` | `warn` | error, warn, info, debug, trace. |
+
+## nginx
+
+You need nginx with the `stream` and `ssl_preread` modules (Debian and
+Ubuntu's `nginx` package has them), a public IPv4, and the certificates your
+sites already use.
+
+1. Copy `nginx/dlpcc-stream.conf` to `/etc/nginx/` and include it at the top
+   level of `nginx.conf`, outside `http {}`. If your cert directories aren't
+   named after the hostname (wildcards, multi-domain certs), add lines to
+   its `$dlpcc_cert_dir` map.
+2. Change every site that has `listen 443 ssl` to the following.
+   `nginx/site-example.conf` shows a full site, including a rate limit on
+   `/dlpcc/`.
+   ```nginx
+   listen 127.0.0.1:8443 ssl proxy_protocol;
+   set_real_ip_from 127.0.0.1;
+   real_ip_header proxy_protocol;
+   ```
+3. Open UDP `49152-65535` in and out for relayed media. TCP 443 is already
+   open. Keep 3478, 5349 and 8443 closed; they're loopback only.
+4. `nginx -t && systemctl reload nginx`, start your app, then
+   `curl https://example.com/dlpcc/ice` should return a
+   `turns:example.com:443?transport=tcp` URL.
+
+## Demo: Chemical + GeForce NOW
+
+`demo/` is a [Chemical](https://chemicaljs.github.io/) proxy (Scramjet over
+Wisp) with DLPCC wired in through the plugin above. It opens
+`play.geforcenow.com`.
+
+```sh
+npm install && npm run build      # in the repo root, builds the wrapper
+npm run build:bins                # needs Go 1.25+
+cd demo && npm install
+DLPCC_SECRET=$(openssl rand -hex 32) DLPCC_RELAY_IP=<public ip> npm start
+```
+
+On a server behind the nginx setup above, that's the real test: on a network
+that blocks UDP, GeForce NOW should still stream, with the selected candidate
+pair in `chrome://webrtc-internals` showing `relay` over `tls`.
+
+To try it on your own machine without nginx, add `DLPCC_LOCAL=1` and open
+`http://localhost:8080`. Browsers then reach the relay directly on
+`turn:localhost:3478`. That doesn't get past a UDP block, since your machine
+still needs UDP to reach the service. What it does show is whether a site
+works with relay-only connections before you deploy.
 
 ## Security
 
 Anyone who can load the client script can read the credential out of it.
 That's how browser TURN works, so assume visitors can use the relay as a UDP
-forwarder until their credential expires. What keeps that under control:
+forwarder until their credential expires. What keeps that in check:
 
 - Private, loopback, link-local, CGNAT and multicast ranges are always
-  blocked as relay targets, so the relay can't reach your internal network.
-  The relay's own IP is blocked too.
-- `DLPCC_ALLOW_PEERS` limits relaying to networks you choose, for example
-  your streaming provider's published ranges. Tightest option if you only
-  care about one service.
-- Credentials expire (`DLPCC_TTL`, 12h by default) and each one can hold
-  `DLPCC_MAX_ALLOCS_PER_USER` relays at once, with a global cap on top.
-- Only hand out credentials to visitors you'd let use the proxy anyway. In
-  Node that means putting `routeRequest` behind whatever session check you
-  already have. In nginx, the example site rate-limits `/dlpcc/`.
-- `DLPCC_HOSTS` stops credentials being issued for hostnames you don't own.
+  blocked as relay targets, as is the relay's own IP, so it can't reach your
+  internal network.
+- `allowPeers` limits relaying to networks you choose. It's the tightest
+  option if you only care about one service.
+- Credentials expire (`ttl`) and each holds at most `maxAllocsPerUser`
+  relays, with `maxAllocs` as a global cap.
+- Only hand out credentials to visitors you'd let use the proxy anyway: put
+  `routeRequest` behind your existing session check, and keep the nginx rate
+  limit on `/dlpcc/`.
+- `hosts` stops credentials being issued for hostnames you don't own.
 
-The secret never leaves the server. If it leaks, change it and restart; old
+The secret stays on the server and goes to the relay as an environment
+variable, not an argument. If it leaks, change it and restart; old
 credentials stop working right away.
-
-## Configuration
-
-Every flag also reads `DLPCC_<NAME>` from the environment.
-
-| Flag | Default | |
-|---|---|---|
-| `-secret` | | Signing secret. Required. |
-| `-relay-ip` | | Public IPv4 for relay candidates. Required. |
-| `-relay-bind` | `0.0.0.0` | Where relay sockets bind. |
-| `-relay-ports` | `49152-65535` | UDP range for relay sockets. |
-| `-turn-listen` | `127.0.0.1:3478` | Plain TCP TURN, fed by nginx. |
-| `-http-listen` | `127.0.0.1:8090` | `/dlpcc/*` endpoints. Empty disables. |
-| `-public-port` | `443` | Port in `turns:` URLs. |
-| `-hosts` | any | Allowed hostnames, `*.example.com` ok. |
-| `-ttl` | `12h` | Credential lifetime. |
-| `-force-relay` | `true` | Send `iceTransportPolicy: relay`. |
-| `-allow-peers` | | Only relay to these CIDRs. |
-| `-deny-peers` | | Extra CIDRs to block. |
-| `-max-allocs-per-user` | `8` | 0 for no limit. |
-| `-max-allocs` | `1000` | 0 for no limit. |
-| `-log-level` | `warn` | error, warn, info, debug, trace. |
 
 ## Known limits
 
-- Routing on "no ALPN means TURN" is based on how Chrome and Firefox behave
-  today. If a browser starts sending ALPN for TURN/TLS, those connections
-  will hit the website instead. Turn on the stream log in
-  `dlpcc-stream.conf` to see what's arriving.
+- Routing on "no ALPN means TURN" matches how Chromium behaves today
+  (checked with Chromium through `nginx/dlpcc-stream.conf`). If a browser
+  starts sending ALPN for TURN over TLS, those connections will hit the
+  website instead. The commented-out stream log in `dlpcc-stream.conf`
+  shows what's arriving.
 - Filters that fingerprint TLS can still tell a long TURN session from
-  normal browsing. This gets you past "block UDP" and "block known
-  hosts", not every DPI box out there.
+  normal browsing. This gets you past "block UDP" and "block known hosts",
+  not every DPI box.
 - Everything is relayed over TCP, so a bad connection hurts more than it
   would on UDP. Fine for most streaming, noticeable on lossy wifi.
-- Long sessions need a credential that outlives them. The default 12h
-  covers almost everything; raise `DLPCC_TTL` if not.
-- Not tested end to end against GeForce NOW yet. The relay, credential
-  flow and patch are tested; whether a given service accepts relay-only
-  candidates is up to that service.
+- Not yet tested against GeForce NOW itself; the demo is how to test it.
+  Whether a service accepts relay-only candidates is up to that service.
 
 ## Development
 
 ```sh
-go test ./...
-cd node && npm install
+npm install
 npm run build:bins   # cross-compiles bin/<platform>-<arch>/, needs Go 1.25+
-npm run build
+npm test             # go test ./relay, builds, then the Node tests
 ```
 
 `npm pack` and `npm publish` run both builds. Set `GO` if `go` isn't on
 PATH, or `DLPCC_TARGETS=linux-x64` to build one platform.
+
+CI (`.github/workflows/build.yml`) runs the tests and builds every binary on
+each push and pull request; they're downloadable as the `dlpcc-relay`
+artifact. Pushing a `v*` tag that matches `package.json`'s version publishes
+to npm (needs an `NPM_TOKEN` secret) and attaches the binaries to a GitHub
+release.
 
 ## License
 
