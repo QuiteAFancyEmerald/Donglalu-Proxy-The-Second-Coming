@@ -17,7 +17,7 @@ const goos = { linux: "linux", darwin: "darwin", win32: "windows" };
 const goarch = { x64: "amd64", arm64: "arm64" };
 
 const only = process.env.DLPCC_TARGETS?.split(",").map((t) => t.trim());
-const root = fileURLToPath(new URL("../../", import.meta.url));
+const root = fileURLToPath(new URL("../", import.meta.url));
 const binDir = new URL("../bin/", import.meta.url);
 
 if (!only) rmSync(binDir, { recursive: true, force: true });
@@ -29,7 +29,7 @@ for (const [platform, arch] of targets) {
   mkdirSync(dir, { recursive: true });
   const out = fileURLToPath(new URL(platform === "win32" ? "dlpcc-relay.exe" : "dlpcc-relay", dir));
   console.log(`building ${target}`);
-  execFileSync(process.env.GO ?? "go", ["build", "-trimpath", "-ldflags=-s -w", "-o", out, "./cmd/dlpcc-relay"], {
+  execFileSync(process.env.GO ?? "go", ["build", "-trimpath", "-ldflags=-s -w", "-o", out, "./relay"], {
     cwd: root,
     stdio: "inherit",
     env: { ...process.env, CGO_ENABLED: "0", GOOS: goos[platform], GOARCH: goarch[arch] },

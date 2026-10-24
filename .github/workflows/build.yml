@@ -1,0 +1,88 @@
+name: build
+
+on:
+  push:
+    branches: [main, turn-relay]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The spawn test needs a relay for this runner.
+      - run: npm run build:bins
+        env:
+          DLPCC_TARGETS: linux-x64
+      - run: npm test
+
+  binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm run build:bins
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dlpcc-relay
+          path: bin/
+          if-no-files-found: error
+
+  # Tag v1.2.3 (matching package.json's version) to publish to npm and
+  # attach the binaries to a GitHub release. Needs an NPM_TOKEN secret.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Check tag matches package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm ci
+      # prepack builds every binary and the wrapper.
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: GitHub release
+        run: |
+          mkdir release
+          for dir in bin/*/; do
+            target=$(basename "$dir")
+            for f in "$dir"*; do
+              case "$f" in
+                *.exe) cp "$f" "release/dlpcc-relay-$target.exe" ;;
+                *) cp "$f" "release/dlpcc-relay-$target" ;;
+              esac
+            done
+          done
+          gh release create "$GITHUB_REF_NAME" release/* --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

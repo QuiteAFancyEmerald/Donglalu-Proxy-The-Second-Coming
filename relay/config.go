@@ -1,4 +1,4 @@
-package relay
+package main
 
 import (
 	"errors"
@@ -8,12 +8,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Config holds every setting for the relay. Each field can be set by flag
-// (-relay-ip) or by environment variable (DLPCC_RELAY_IP); flags win.
+// (-relay-ip) or by environment variable (DLPCC_RELAY_IP); flags win. The
+// Node wrapper passes everything as environment so the secret stays out of
+// the process list.
 type Config struct {
+	// Secret checks the TURN REST credentials the Node wrapper signs.
 	Secret string
 	Realm  string
 
@@ -27,14 +29,6 @@ type Config struct {
 	RelayBind    string
 	RelayMinPort uint16
 	RelayMaxPort uint16
-
-	// HTTPListen serves /dlpcc/ice and /dlpcc/client.js. Empty disables it
-	// (for example when a Node app mints credentials itself).
-	HTTPListen string
-	PublicPort int
-	Hosts      []string
-	TTL        time.Duration
-	ForceRelay bool
 
 	AllowPeers       []*net.IPNet
 	DenyPeers        []*net.IPNet
@@ -62,17 +56,12 @@ func Load(args []string) (*Config, error) {
 		return fs.String(name, envOr(name, def), usage+" (env "+envName(name)+")")
 	}
 
-	secret := str("secret", "", "shared secret used to sign TURN credentials (required)")
+	secret := str("secret", "", "shared secret the Node wrapper signs TURN credentials with (required)")
 	realm := str("realm", "dlpcc", "TURN realm")
 	turnListen := str("turn-listen", "127.0.0.1:3478", "plain TCP TURN listener that nginx forwards decrypted TLS to")
 	relayIP := str("relay-ip", "", "public IPv4 address advertised for relayed media (required)")
 	relayBind := str("relay-bind", "0.0.0.0", "local address relay sockets bind to")
 	relayPorts := str("relay-ports", "49152-65535", "UDP port range for relay sockets")
-	httpListen := str("http-listen", "127.0.0.1:8090", "credential/client-script HTTP listener; empty disables")
-	publicPort := str("public-port", "443", "public TLS port put in turns: URLs")
-	hosts := str("hosts", "", "comma separated hostnames allowed in turns: URLs, *.example.com wildcards ok; empty allows any")
-	ttl := str("ttl", "12h", "lifetime of issued credentials")
-	forceRelay := str("force-relay", "true", "set iceTransportPolicy=relay in issued configs")
 	allowPeers := str("allow-peers", "", "comma separated CIDRs; when set, only these peers can be relayed to")
 	denyPeers := str("deny-peers", "", "extra comma separated CIDRs to block on top of the built-in private ranges")
 	perUser := str("max-allocs-per-user", "8", "concurrent allocations per credential, 0 = unlimited")
@@ -88,8 +77,6 @@ func Load(args []string) (*Config, error) {
 		Realm:      *realm,
 		TURNListen: *turnListen,
 		RelayBind:  *relayBind,
-		HTTPListen: *httpListen,
-		Hosts:      splitList(*hosts),
 		LogLevel:   *logLevel,
 	}
 
@@ -103,15 +90,6 @@ func Load(args []string) (*Config, error) {
 	var err error
 	if cfg.RelayMinPort, cfg.RelayMaxPort, err = parsePortRange(*relayPorts); err != nil {
 		return nil, err
-	}
-	if cfg.PublicPort, err = strconv.Atoi(*publicPort); err != nil {
-		return nil, fmt.Errorf("public-port: %w", err)
-	}
-	if cfg.TTL, err = time.ParseDuration(*ttl); err != nil {
-		return nil, fmt.Errorf("ttl: %w", err)
-	}
-	if cfg.ForceRelay, err = strconv.ParseBool(*forceRelay); err != nil {
-		return nil, fmt.Errorf("force-relay: %w", err)
 	}
 	if cfg.AllowPeers, err = parseCIDRs(*allowPeers); err != nil {
 		return nil, fmt.Errorf("allow-peers: %w", err)
