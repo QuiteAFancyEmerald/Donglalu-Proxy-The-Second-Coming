@@ -319,6 +319,37 @@ This is also a real test of the bypass: your browser only talks TCP to
 GitHub, and the relay sends the UDP from the Codespace. So it works from a
 network that blocks UDP, with GitHub's cloud as the server.
 
+## Deploy with Docker
+
+The Docker image builds and runs the included demo app and its Go relay.
+Build it from the repository root:
+
+```sh
+docker build -t dlpcc-demo .
+docker run --name dlpcc-demo --restart unless-stopped \
+  -p 8080:8080/tcp -p 49152-65535:49152-65535/udp \
+  -e DLPCC_RELAY_IP=YOUR_SERVER_PUBLIC_IPV4 \
+  -e DLPCC_SECRET=YOUR_LONG_RANDOM_SECRET \
+  dlpcc-demo
+```
+
+Set `DLPCC_RELAY_IP` to the server's public IPv4 address; a container usually
+detects its private interface address instead. Keep `DLPCC_SECRET` private
+and use a different random value for each deployment. Visit
+`http://YOUR_SERVER:8080`, or put the container behind a TLS-terminating
+reverse proxy and forward website traffic to port 8080. For TURN over TLS,
+the relay also needs the public TLS connection (for example, TLS passthrough
+to the container or a certificate configured with `TLS_CERT` and `TLS_KEY`);
+a regular HTTP reverse proxy alone cannot forward TURN.
+
+For Oracle Cloud, allow inbound TCP 8080 and UDP ports 49152-65535 in both the
+instance firewall and the VCN security rules. Restrict TCP 8080 to your
+reverse proxy or use a TLS proxy in front of it. The same UDP range must be
+reachable on the public IP for browser TURN media to work. Some managed
+container platforms (including plans that only expose HTTP/TCP) do not allow
+publishing that UDP range; the web app may load there, but TURN will not work
+unless the platform supports it.
+
 ## Security
 
 Anyone who can load the client script can read the credential out of it.

@@ -1,0 +1,11 @@
+.git
+.github
+.devcontainer
+node_modules
+**/node_modules
+dist
+**/dist
+bin
+**/bin
+test
+nginx
