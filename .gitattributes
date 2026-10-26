@@ -1,0 +1,2 @@
+# Shell scripts run in Linux containers (Codespaces); keep them LF on Windows too.
+*.sh text eol=lf

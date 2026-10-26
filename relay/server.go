@@ -47,12 +47,12 @@ func Start(cfg *Config) (*Server, error) {
 		},
 		ListenerConfigs: []turn.ListenerConfig{{
 			Listener: ln,
-			RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
+			RelayAddressGenerator: selfGenerator{&turn.RelayAddressGeneratorPortRange{
 				RelayAddress: cfg.RelayIP,
 				Address:      cfg.RelayBind,
 				MinPort:      cfg.RelayMinPort,
 				MaxPort:      cfg.RelayMaxPort,
-			},
+			}, cfg},
 			PermissionHandler: func(_ net.Addr, peerIP net.IP) bool {
 				return cfg.peerAllowed(peerIP)
 			},

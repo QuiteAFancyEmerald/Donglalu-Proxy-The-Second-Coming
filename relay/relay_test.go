@@ -97,11 +97,22 @@ func TestPeerFilter(t *testing.T) {
 		"169.254.1.1": false,
 		"fd00::1":     false,
 		"2606:4700::": true,
+		"203.0.113.9": true, // the relay itself; selfConn limits it to relay ports
 	} {
 		if got := cfg.peerAllowed(net.ParseIP(ip)); got != want {
 			t.Errorf("peerAllowed(%s) = %v, want %v", ip, got, want)
 		}
 	}
+
+	cfg.AllowPrivatePeers = true
+	cfg.DenyPeers, _ = parseCIDRs("10.9.0.0/16")
+	if !cfg.peerAllowed(net.ParseIP("127.0.0.1")) || !cfg.peerAllowed(net.ParseIP("203.0.113.9")) {
+		t.Error("allow-private-peers didn't lift the built-in block")
+	}
+	if cfg.peerAllowed(net.ParseIP("10.9.1.1")) {
+		t.Error("deny-peers not enforced with allow-private-peers")
+	}
+	cfg.AllowPrivatePeers, cfg.DenyPeers = false, nil
 
 	cfg.AllowPeers, _ = parseCIDRs("8.8.8.0/24")
 	if cfg.peerAllowed(net.ParseIP("1.1.1.1")) || !cfg.peerAllowed(net.ParseIP("8.8.8.8")) {
@@ -176,5 +187,59 @@ func TestRelay(t *testing.T) {
 			t.Fatalf("reply %d: client got %d bytes, %v", i, n, err)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// TestSelfRelay has two clients of the same relay talk through their relay
+// addresses, as two people behind one proxy would in a call, and checks
+// nothing else on the relay's own IP is reachable.
+func TestSelfRelay(t *testing.T) {
+	cfg := startServer(t, "-relay-ports", "50400-50420")
+	user, pass := nodeCredential(cfg.Secret, time.Hour)
+	a, err := dial(t, cfg, user, pass).Allocate()
+	if err != nil {
+		t.Fatalf("allocate a: %v", err)
+	}
+	defer a.Close()
+	b, err := dial(t, cfg, user, pass).Allocate()
+	if err != nil {
+		t.Fatalf("allocate b: %v", err)
+	}
+	defer b.Close()
+
+	// Permissions are per IP and both relays share one, so a write each way
+	// opens both; the first can be lost before b's permission exists.
+	msg := bytes.Repeat([]byte("x"), 200)
+	buf := make([]byte, 1500)
+	if _, err := a.WriteTo(msg, b.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.WriteTo(msg, a.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+	_ = a.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if n, _, err := a.ReadFrom(buf); err != nil || !bytes.Equal(buf[:n], msg) {
+		t.Fatalf("a got %d bytes, %v", n, err)
+	}
+	if _, err := a.WriteTo(msg, b.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+	_ = b.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if n, _, err := b.ReadFrom(buf); err != nil || !bytes.Equal(buf[:n], msg) {
+		t.Fatalf("b got %d bytes, %v", n, err)
+	}
+
+	// A service on the relay's IP outside the relay range stays unreachable.
+	other, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if _, err := a.WriteTo(msg, other.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+	_ = other.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	if n, _, err := other.ReadFrom(buf); err == nil {
+		t.Fatalf("non-relay port on the relay IP got %d bytes", n)
 	}
 }

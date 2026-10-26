@@ -17,6 +17,14 @@ test("iceConfig points at the visitor's host", () => {
   assert.ok(ice.expires > Date.now() / 1000 + 11 * 3600);
 });
 
+test("publicHost replaces the visitor's host in TURN URLs", () => {
+  const relay = createRelay({ secret, spawn: false, publicHost: "turn.example.com" });
+  assert.deepEqual(relay.iceConfig("mirror.example.com").iceServers[0].urls, ["turns:turn.example.com:443?transport=tcp"]);
+  // One TURN name per mirror.
+  const perMirror = createRelay({ secret, spawn: false, publicHost: (host) => "turn." + host.replace(/^www\./, "") });
+  assert.deepEqual(perMirror.iceConfig("www.mirror2.net").iceServers[0].urls, ["turns:turn.mirror2.net:443?transport=tcp"]);
+});
+
 test("hosts allowlist and invalid hosts", () => {
   const relay = createRelay({ secret, spawn: false, hosts: ["*.example.com", "example2.com"] });
   assert.ok(relay.iceConfig("a.example.com"));
@@ -78,6 +86,111 @@ test("spawned relay accepts the wrapper's credentials", { skip: !hasBundledBinar
   assert.equal(await allocate(port, username, credential), "ok");
   // pion answers a bad MESSAGE-INTEGRITY with 400 rather than 401.
   assert.match(await allocate(port, username, "wrong"), /^error 4/);
+});
+
+test("parses the hosts browsers send", () => {
+  const relay = createRelay({ secret, spawn: false });
+  assert.equal(relay.iceConfig("example.com.").iceServers[0].urls[0], "turns:example.com:443?transport=tcp");
+  assert.equal(relay.iceConfig("[::1]:8080").iceServers[0].urls[0], "turns:[::1]:443?transport=tcp");
+  assert.equal(relay.iceConfig("127.0.0.1").iceServers[0].urls[0], "turns:127.0.0.1:443?transport=tcp");
+  assert.equal(relay.iceConfig("example.com:99999"), null);
+  assert.equal(relay.iceConfig("a b.com"), null);
+});
+
+test("a spawning relay makes up its own secret", () => {
+  assert.ok(createRelay().iceConfig("example.com"));
+  assert.throws(() => createRelay({ spawn: false }), /secret is required/);
+});
+
+test("attached relay hands out the visitor's own port and scheme", () => {
+  const relay = createRelay({ secret, spawn: false }).attach(createServer());
+  const req = (host, encrypted) => ({ headers: { host }, socket: { encrypted } });
+  assert.equal(relay.iceConfig(req("localhost:8080")).iceServers[0].urls[0], "turn:localhost:8080?transport=tcp");
+  assert.equal(relay.iceConfig(req("example.com", false)).iceServers[0].urls[0], "turn:example.com:80?transport=tcp");
+  assert.equal(relay.iceConfig(req("example.com", true)).iceServers[0].urls[0], "turns:example.com:443?transport=tcp");
+  assert.equal(relay.iceConfig(req("example.com:8443", true)).iceServers[0].urls[0], "turns:example.com:8443?transport=tcp");
+  const pinned = createRelay({ secret, spawn: false, tls: true, publicPort: 443 }).attach(createServer());
+  assert.equal(pinned.iceConfig(req("localhost:8080")).iceServers[0].urls[0], "turns:localhost:443?transport=tcp");
+});
+
+// No nginx: TURN, plain requests and websocket upgrades all share the app's port.
+test("attach shares the server's port with the relay", { skip: !hasBundledBinary && "no bundled binary, run npm run build:bins" }, async (t) => {
+  const turnPort = await freePort();
+  const relay = createRelay({ secret, relayIp: "127.0.0.1", turnListen: `127.0.0.1:${turnPort}`, relayPorts: "50101-50200" });
+  const server = createServer((req, res) => {
+    if (!relay.routeRequest(req, res)) res.end("app");
+  });
+  server.on("upgrade", (req, socket) => {
+    socket.end("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n");
+  });
+  relay.attach(server);
+  await relay.start();
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const port = server.address().port;
+  t.after(() => {
+    server.close();
+    return relay.stop();
+  });
+
+  const get = (path) =>
+    new Promise((resolve, reject) => {
+      request({ host: "127.0.0.1", port, path, headers: { host: `localhost:${port}` } }, (res) => {
+        let body = "";
+        res.on("data", (c) => (body += c));
+        res.on("end", () => resolve(body));
+      })
+        .on("error", reject)
+        .end();
+    });
+  assert.equal(await get("/"), "app");
+  const ice = JSON.parse(await get("/dlpcc/ice"));
+  assert.equal(ice.iceServers[0].urls[0], `turn:localhost:${port}?transport=tcp`);
+
+  const upgraded = await new Promise((resolve, reject) => {
+    request({ host: "127.0.0.1", port, headers: { Connection: "Upgrade", Upgrade: "websocket" } })
+      .on("upgrade", (res, socket) => {
+        socket.destroy();
+        resolve(res.statusCode);
+      })
+      .on("error", reject)
+      .end();
+  });
+  assert.equal(upgraded, 101);
+
+  const { username, credential } = ice.iceServers[0];
+  assert.equal(await allocate(port, username, credential), "ok");
+  assert.match(await allocate(port, username, "wrong"), /^error 4/);
+  // The app keeps working after TURN traffic went through the same port.
+  assert.equal(await get("/"), "app");
+});
+
+test("two attached relays on one machine each get their own listener", { skip: !hasBundledBinary && "no bundled binary, run npm run build:bins" }, async (t) => {
+  const apps = [];
+  for (const relayPorts of ["50201-50250", "50251-50300"]) {
+    const relay = createRelay({ secret: randomBytes(16).toString("hex"), relayIp: "127.0.0.1", relayPorts });
+    const server = createServer((req, res) => relay.routeRequest(req, res) || res.end());
+    relay.attach(server);
+    await relay.start();
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    t.after(() => {
+      server.close();
+      return relay.stop();
+    });
+    apps.push({ relay, port: server.address().port });
+  }
+  // Each app's credentials work on its own port, so neither reached the other's relay.
+  for (const { relay, port } of apps) {
+    const { username, credential } = relay.iceConfig(`localhost:${port}`).iceServers[0];
+    assert.equal(await allocate(port, username, credential), "ok");
+  }
+});
+
+test("start rejects when the relay can't listen", { skip: !hasBundledBinary && "no bundled binary, run npm run build:bins" }, async (t) => {
+  const taken = createTcpServer().listen(0, "127.0.0.1");
+  await new Promise((r) => taken.once("listening", r));
+  t.after(() => taken.close());
+  const relay = createRelay({ secret, relayIp: "127.0.0.1", turnListen: `127.0.0.1:${taken.address().port}` });
+  await assert.rejects(relay.start(), /exited before listening/);
 });
 
 function freePort() {
@@ -160,6 +273,7 @@ function roundTrip(sock, msg) {
       }
     };
     sock.on("data", onData).once("error", reject);
+    sock.once("close", () => reject(new Error("connection closed")));
     sock.write(msg);
   });
 }

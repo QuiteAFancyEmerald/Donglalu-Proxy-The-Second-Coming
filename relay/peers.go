@@ -3,6 +3,8 @@ package main
 import (
 	"net"
 	"strings"
+
+	"github.com/pion/turn/v4"
 )
 
 // blockedPeers are never valid relay targets. Without this anyone holding a
@@ -39,9 +41,17 @@ func mustCIDRs(cidrs ...string) []*net.IPNet {
 	return nets
 }
 
-// peerAllowed reports whether media may be relayed to ip.
+// peerAllowed reports whether media may be relayed to ip. The relay's own
+// IP is allowed so two of its clients can reach each other (a call between
+// two people behind the same proxy); selfConn keeps that to relay ports.
 func (c *Config) peerAllowed(ip net.IP) bool {
-	if ip.Equal(c.RelayIP) || containsIP(blockedPeers, ip) || containsIP(c.DenyPeers, ip) {
+	if ip.Equal(c.RelayIP) {
+		return true
+	}
+	if !c.AllowPrivatePeers && containsIP(blockedPeers, ip) {
+		return false
+	}
+	if containsIP(c.DenyPeers, ip) {
 		return false
 	}
 	return len(c.AllowPeers) == 0 || containsIP(c.AllowPeers, ip)
@@ -54,4 +64,37 @@ func containsIP(nets []*net.IPNet, ip net.IP) bool {
 		}
 	}
 	return false
+}
+
+// relayPort reports whether port is one of the relay's own UDP ports.
+func (c *Config) relayPort(port int) bool {
+	return port >= int(c.RelayMinPort) && port <= int(c.RelayMaxPort)
+}
+
+// selfGenerator hands out relay sockets that only send to the relay's own IP
+// on relay ports, so peerAllowed letting that IP through can't reach other
+// services on the host.
+type selfGenerator struct {
+	turn.RelayAddressGenerator
+	cfg *Config
+}
+
+func (g selfGenerator) AllocatePacketConn(network string, port int) (net.PacketConn, net.Addr, error) {
+	conn, addr, err := g.RelayAddressGenerator.AllocatePacketConn(network, port)
+	if err != nil {
+		return nil, nil, err
+	}
+	return selfConn{conn, g.cfg}, addr, nil
+}
+
+type selfConn struct {
+	net.PacketConn
+	cfg *Config
+}
+
+func (c selfConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	if u, ok := addr.(*net.UDPAddr); ok && !c.cfg.AllowPrivatePeers && u.IP.Equal(c.cfg.RelayIP) && !c.cfg.relayPort(u.Port) {
+		return len(p), nil // dropped, like any other filtered datagram
+	}
+	return c.PacketConn.WriteTo(p, addr)
 }

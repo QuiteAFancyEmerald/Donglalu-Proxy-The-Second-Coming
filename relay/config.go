@@ -30,10 +30,13 @@ type Config struct {
 	RelayMinPort uint16
 	RelayMaxPort uint16
 
-	AllowPeers       []*net.IPNet
-	DenyPeers        []*net.IPNet
-	MaxAllocsPerUser int
-	MaxAllocs        int
+	AllowPeers []*net.IPNet
+	DenyPeers  []*net.IPNet
+	// AllowPrivatePeers lifts the built-in private range and relay IP block,
+	// for testing on one machine or a LAN.
+	AllowPrivatePeers bool
+	MaxAllocsPerUser  int
+	MaxAllocs         int
 
 	LogLevel string
 }
@@ -64,6 +67,7 @@ func Load(args []string) (*Config, error) {
 	relayPorts := str("relay-ports", "49152-65535", "UDP port range for relay sockets")
 	allowPeers := str("allow-peers", "", "comma separated CIDRs; when set, only these peers can be relayed to")
 	denyPeers := str("deny-peers", "", "extra comma separated CIDRs to block on top of the built-in private ranges")
+	allowPrivate := str("allow-private-peers", "false", "relay to private, loopback and the relay's own addresses too; testing only")
 	perUser := str("max-allocs-per-user", "8", "concurrent allocations per credential, 0 = unlimited")
 	maxAllocs := str("max-allocs", "1000", "concurrent allocations in total, 0 = unlimited")
 	logLevel := str("log-level", "warn", "pion log level: error, warn, info, debug, trace")
@@ -96,6 +100,9 @@ func Load(args []string) (*Config, error) {
 	}
 	if cfg.DenyPeers, err = parseCIDRs(*denyPeers); err != nil {
 		return nil, fmt.Errorf("deny-peers: %w", err)
+	}
+	if cfg.AllowPrivatePeers, err = strconv.ParseBool(*allowPrivate); err != nil {
+		return nil, fmt.Errorf("allow-private-peers: %w", err)
 	}
 	if cfg.MaxAllocsPerUser, err = strconv.Atoi(*perUser); err != nil {
 		return nil, fmt.Errorf("max-allocs-per-user: %w", err)

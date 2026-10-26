@@ -1,0 +1,19 @@
+{
+  // Runs the demo (Chemical + Scramjet + DLPCC) in a Codespace. Open it on
+  // localhost (VS Code desktop, or `gh codespace ports forward 8080:8080`):
+  // the app.github.dev link only passes HTTP, so TURN can't reach the relay
+  // through it. See "Demo" in the README.
+  "name": "DLPCC demo",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "features": {
+    // Builds the relay; bin/ isn't committed.
+    "ghcr.io/devcontainers/features/go:1": { "version": "latest" }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postAttachCommand": "bash .devcontainer/start.sh",
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "DLPCC demo", "onAutoForward": "openBrowser" }
+  },
+  "hostRequirements": { "cpus": 2 }
+}
