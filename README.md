@@ -434,11 +434,14 @@ PATH, or `DLPCC_TARGETS=linux-x64` to build one platform.
 CI (`.github/workflows/build.yml`) runs the tests and builds every binary on
 each push and pull request; they're downloadable as the `dlpcc-relay`
 artifact. Pushing a `v*` tag that matches `package.json`'s version publishes
-to npm — with trusted publishing, so there's no token: on npmjs.com, add
-this repository, the `build.yml` workflow and the `release` environment as
-the package's trusted publisher (the package has to exist for that, so the
-first publish is a manual `npm publish`) — and attaches the binaries to a
-GitHub release.
+to npm with trusted publishing — so there's no token: on npmjs.com, add this
+repository, the `build.yml` workflow and the `release` environment as the
+package's trusted publisher, and leave direct publishing unchecked so each
+release is staged, waiting for a maintainer's 2FA approval on the package
+page before it becomes installable. (The package has to exist before you can
+attach a trusted publisher, so the first publish is a manual
+`npm publish` of a `0.0.0` placeholder.) The tag job also attaches the
+binaries to a GitHub release.
 
 ## License
 
