@@ -164,6 +164,10 @@ const ice = await (await fetch("/dlpcc/ice")).json();
 const pc = new RTCPeerConnection(ice); // { iceServers, iceTransportPolicy: "relay" }
 ```
 
+Check `res.ok` before using it: past `rateLimit` the endpoint answers 429 with
+a `Retry-After` header, and a peer connection built from that body just fails
+to connect.
+
 Or mint them server side with `relay.iceConfig(req)` and send them along with
 your own signalling. `forceRelay: false` drops `iceTransportPolicy: "relay"`,
 so peers that can reach each other directly still do, and the relay is only
@@ -223,6 +227,8 @@ URL is your TURN server.
 
 ## Options
 
+Every option can also be set by environment variable, named like the relay's own: `DLPCC_` plus the option in SNAKE_CASE (`rateLimit` → `DLPCC_RATE_LIMIT`), lists comma separated, booleans `1`/`true`/`0`/`false`. Options passed to `createRelay()` win over the environment, which wins over the defaults below.
+
 | Option | Default | |
 |---|---|---|
 | `enabled` | `true` | Master switch. When false nothing is spawned, `routeRequest` passes everything through and `clientScript` returns `""`, so call sites can stay. |
@@ -230,6 +236,9 @@ URL is your TURN server.
 | `relayIp` | detected | Public IPv4 advertised for relayed media. |
 | `hosts` | any | Only issue credentials when the visitor used one of these hostnames. `*.example.com` ok. Rarely needed. |
 | `ttl` | `43200` | Credential lifetime in seconds. Must outlive a session. |
+| `rateLimit` | `30` | Requests per minute per client IP on the dlpcc endpoints, 429 past the burst. 0 disables. |
+| `rateLimitBurst` | `10` | How many requests one client IP may spend at once. |
+| `rateLimitGlobal` | off | Requests per minute across all visitors combined. Its burst is one minute's worth. 0 disables. |
 | `forceRelay` | `true` | Set `iceTransportPolicy: "relay"`. |
 | `allowPeers` | any public | Only relay to these CIDRs, e.g. a provider's ranges. |
 | `denyPeers` | | Extra CIDRs to block. |
@@ -293,9 +302,15 @@ shows each connection's path. Try the data channel test with Block UDP on: it
 fails with DLPCC off and connects through the relay with it on.
 
 Environment: `PORT`; `TLS_CERT` and `TLS_KEY` for https, and with it `turns:`
-on the same port; `DLPCC_SECRET`, `DLPCC_RELAY_IP`, `DLPCC_HOSTS`,
-`DLPCC_LOG_LEVEL`, `DLPCC_ALLOW_PRIVATE_PEERS=1`; and `DLPCC_NGINX=1` when
-nginx owns 443. On your own machine your connection still needs UDP to reach
+on the same port; and `DLPCC_NGINX=1` when nginx owns 443. Every other
+option is a `DLPCC_*` variable (see [Options](#options)): `DLPCC_SECRET`,
+`DLPCC_RELAY_IP`, `DLPCC_HOSTS`, `DLPCC_LOG_LEVEL`,
+`DLPCC_ALLOW_PRIVATE_PEERS=1` and so on. The demo also runs stricter than
+the library defaults, so a public instance can't be farmed as a free relay:
+minting is capped at 120 requests/min across all visitors (30/min per IP),
+and at most 100 connections relay at once. Tune those with
+`DLPCC_RATE_LIMIT`, `DLPCC_RATE_LIMIT_BURST`, `DLPCC_RATE_LIMIT_GLOBAL` and
+`DLPCC_MAX_ALLOCS`. On your own machine your connection still needs UDP to reach
 the service, so the real test is the demo on a server, opened from a network
 that blocks UDP.
 
@@ -326,16 +341,25 @@ Build it from the repository root:
 
 ```sh
 docker build -t dlpcc-demo .
-docker run --name dlpcc-demo --restart unless-stopped \
-  -p 8080:8080/tcp -p 49152-65535:49152-65535/udp \
+docker run --name dlpcc-demo --restart unless-stopped --network host \
   -e DLPCC_RELAY_IP=YOUR_SERVER_PUBLIC_IPV4 \
   -e DLPCC_SECRET=YOUR_LONG_RANDOM_SECRET \
   dlpcc-demo
 ```
 
+Use `--network host` on Linux. Publishing the whole UDP range with `-p`
+makes Docker start a proxy per port, which is slow and memory hungry. If you
+can't use host networking, narrow the range with `DLPCC_RELAY_PORTS` and
+publish only that, for example
+`-e DLPCC_RELAY_PORTS=50000-50100 -p 8080:8080 -p 50000-50100:50000-50100/udp`.
+
 Set `DLPCC_RELAY_IP` to the server's public IPv4 address; a container usually
 detects its private interface address instead. Keep `DLPCC_SECRET` private
-and use a different random value for each deployment. Visit
+and use a different random value for each deployment. Since the image runs
+the demo, `/dlpcc/` is rate limited out of the box — 30 requests/min per
+client IP, 120/min across all visitors, and at most 100 concurrent relays —
+so a public instance can't be farmed; the `DLPCC_*` variables tune all of
+it. Visit
 `http://YOUR_SERVER:8080`, or put the container behind a TLS-terminating
 reverse proxy and forward website traffic to port 8080. For TURN over TLS,
 the relay also needs the public TLS connection (for example, TLS passthrough
@@ -364,8 +388,15 @@ forwarder until their credential expires. What keeps that in check:
 - Credentials expire (`ttl`) and each holds at most `maxAllocsPerUser`
   relays, with `maxAllocs` as a global cap.
 - Only hand out credentials to visitors you'd let use the site anyway: put
-  `routeRequest` behind your existing session check, and rate limit
-  `/dlpcc/` (`nginx/site-example.conf` has an example).
+  `routeRequest` behind your existing session check. `/dlpcc/` is rate
+  limited out of the box (`rateLimit`, 30/min per client IP, burst 10,
+  a 429 with `Retry-After` past that). Behind a reverse proxy, set your
+  framework's trust proxy so the limit applies per visitor instead of to the
+  proxy itself (Express: `app.set("trust proxy", 1)`), and keep the
+  `limit_req` in `nginx/site-example.conf` as a second layer. The buckets
+  live in the Node process, so cluster workers each keep their own, and a
+  visitor who can rotate addresses walks past the per-IP one — on a public
+  box, `rateLimitGlobal` is the setting that still holds.
 - `hosts` stops credentials being issued for hostnames you don't own.
 
 The secret stays on the server and goes to the relay as an environment
@@ -403,8 +434,11 @@ PATH, or `DLPCC_TARGETS=linux-x64` to build one platform.
 CI (`.github/workflows/build.yml`) runs the tests and builds every binary on
 each push and pull request; they're downloadable as the `dlpcc-relay`
 artifact. Pushing a `v*` tag that matches `package.json`'s version publishes
-to npm (needs an `NPM_TOKEN` secret) and attaches the binaries to a GitHub
-release.
+to npm — with trusted publishing, so there's no token: on npmjs.com, add
+this repository, the `build.yml` workflow and the `release` environment as
+the package's trusted publisher (the package has to exist for that, so the
+first publish is a manual `npm publish`) — and attaches the binaries to a
+GitHub release.
 
 ## License
 

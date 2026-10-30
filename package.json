@@ -1,6 +1,6 @@
 {
   "name": "dlpcc",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Self-hosted TURN on your Node server's own port: a prebuilt Go relay plus a Node wrapper that runs it and signs credentials, with a Scramjet plugin that routes proxied pages' WebRTC through it.",
   "license": "AGPL-3.0-or-later",
   "repository": {

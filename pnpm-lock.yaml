@@ -1,0 +1,213 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@mercuryworkshop/scramjet-controller':
+        specifier: '*'
+        version: 0.0.14(@mercuryworkshop/scramjet@1.1.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.0
+        version: 20.19.43
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
+packages:
+
+  '@fastify/deepmerge@3.2.4':
+    resolution: {integrity: sha512-kc8GQq5gX9RRhw0rov3DMrN8wS8yRlxJRdDzsYwwdBV/wazuVgc/1K7CKL90tlvu3RlHan6Y0R0aE3nJtBz2eQ==}
+
+  '@mercuryworkshop/bare-mux@2.1.9':
+    resolution: {integrity: sha512-fiOqWm3VP0Bl8T+0l+qnb7ab9zO+PpKVbtJvOnMsefUv6kWIaoDtqyr9hd/t4gA8oBwgtyZVqIwO2J9nKY9ylw==}
+
+  '@mercuryworkshop/proxy-transports@1.0.2':
+    resolution: {integrity: sha512-zgD+JMYNSx8LxVLWwGPPVnoDHjoh1GqqwUJIjhIwCwhy+Z7g+MhmiTJvCcRPAo7qXXbqJwIrpBJduRSOrjMV7g==}
+
+  '@mercuryworkshop/scramjet-controller@0.0.14':
+    resolution: {integrity: sha512-0Sfn0xcUM69h6pIaPmntwFYcAOLyNzGPE6AQSMwrakYUFhJNLbEYWMa4actp6w3jVnwpQ9suggOO1bKrX5zioA==}
+    peerDependencies:
+      '@mercuryworkshop/scramjet': '*'
+
+  '@mercuryworkshop/scramjet@1.1.0':
+    resolution: {integrity: sha512-T/9GZqAQX42eYr/t6VGR2m9J4BtIuncRkANo8hBVTGskrr522yuhaADhSu+65DYlhUyQnLUjDikuNYzlgv0Ejw==}
+
+  '@types/node@20.19.43':
+    resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
+
+  clone-regexp@3.0.0:
+    resolution: {integrity: sha512-ujdnoq2Kxb8s3ItNBtnYeXdm07FcU0u8ARAT1lQ2YdMwQC+cdiXX8KoqMVuglztILivceTtp4ivqGSmEmhBUJw==}
+    engines: {node: '>=12'}
+
+  convert-hrtime@5.0.0:
+    resolution: {integrity: sha512-lOETlkIeYSJWcbbcvjRKGxVMXJR+8+OQb/mTPbA4ObPMytYIsUbuOE0Jzy60hjARYszq1id0j8KgVhC+WGZVTg==}
+    engines: {node: '>=12'}
+
+  dom-serializer@2.0.0:
+    resolution: {integrity: sha512-wIkAryiqt/nV5EQKqQpo3SToSOV9J0DnbJqwK7Wv/Trc92zIAYZ4FlMu+JPFW1DfGFt81ZTCGgDEabffXeLyJg==}
+
+  domelementtype@2.3.0:
+    resolution: {integrity: sha512-OLETBj6w0OsagBwdXnPdN0cnMfF9opN69co+7ZrbfPGrdpPVNBUj02spi6B1N7wChLQiPn4CSH/zJvXw56gmHw==}
+
+  domhandler@5.0.3:
+    resolution: {integrity: sha512-cgwlv/1iFQiFnU96XXgROh8xTeetsnJiDsTc7TYCLFd9+/WNkIqPTxiM/8pSd8VIrhXGTf1Ny1q1hquVqDJB5w==}
+    engines: {node: '>= 4'}
+
+  domutils@3.2.2:
+    resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
+
+  entities@4.5.0:
+    resolution: {integrity: sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==}
+    engines: {node: '>=0.12'}
+
+  entities@6.0.1:
+    resolution: {integrity: sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g==}
+    engines: {node: '>=0.12'}
+
+  function-timeout@0.1.1:
+    resolution: {integrity: sha512-0NVVC0TaP7dSTvn1yMiy6d6Q8gifzbvQafO46RtLG/kHJUBNd+pVRGOBoK44wNBvtSPUJRfdVvkFdD3p0xvyZg==}
+    engines: {node: '>=14.16'}
+
+  htmlparser2@10.0.0:
+    resolution: {integrity: sha512-TwAZM+zE5Tq3lrEHvOlvwgj1XLWQCtaaibSN11Q+gGBAS7Y1uZSWwXXRe4iF6OXnaq1riyQAPFOBtYc77Mxq0g==}
+
+  idb@8.0.4:
+    resolution: {integrity: sha512-jd0ITCrN+Zah4J7R/Z2jnR3W7A4BXDAjmo62MwWuSjxCiueUAf7X5rbodEdidWzeknwXHmLpdZkoiiCppNi30Q==}
+
+  ip-regex@5.0.0:
+    resolution: {integrity: sha512-fOCG6lhoKKakwv+C6KdsOnGvgXnmgfmp0myi3bcNwj3qfwPAxRKWEuFhvEFF7ceYIz6+1jRZ+yguLFAmUNPEfw==}
+    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
+
+  is-ip@5.0.1:
+    resolution: {integrity: sha512-FCsGHdlrOnZQcp0+XT5a+pYowf33itBalCl+7ovNXC/7o5BhIpG14M3OrpPPdBSIQJCm+0M5+9mO7S9VVTTCFw==}
+    engines: {node: '>=14.16'}
+
+  is-regexp@3.1.0:
+    resolution: {integrity: sha512-rbku49cWloU5bSMI+zaRaXdQHXnthP6DZ/vLnfdSKyL4zUzuWnomtOEiZZOd+ioQ+avFo/qau3KPTc7Fjy1uPA==}
+    engines: {node: '>=12'}
+
+  parse-domain@8.4.0:
+    resolution: {integrity: sha512-dQK2vh9TfEYtfuA8haMyk1mkYRya1MP1r2bs79bnDb3w4uOgPgXdwUUmTOpSiDsQL71BlZRS7+rIWdBJfp2QwQ==}
+    hasBin: true
+
+  set-cookie-parser@2.7.3:
+    resolution: {integrity: sha512-irZHtTqurLna57KQG/s+fzOwv/J6XSH4cs8M/vsrY3uCaQ3S6+QJguAH0WdN47SXlk82voMZ4naWMQf8fdEoIg==}
+
+  super-regex@0.2.0:
+    resolution: {integrity: sha512-WZzIx3rC1CvbMDloLsVw0lkZVKJWbrkJ0k1ghKFmcnPrW1+jWbgTkTEWVtD9lMdmI4jZEz40+naBxl1dCUhXXw==}
+    engines: {node: '>=14.16'}
+
+  time-span@5.1.0:
+    resolution: {integrity: sha512-75voc/9G4rDIJleOo4jPvN4/YC4GRZrY8yy1uU4lwrB3XEQbWve8zXoO5No4eFrGcTAMYyoY67p8jRQdtA1HbA==}
+    engines: {node: '>=12'}
+
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  undici-types@6.21.0:
+    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
+
+snapshots:
+
+  '@fastify/deepmerge@3.2.4': {}
+
+  '@mercuryworkshop/bare-mux@2.1.9': {}
+
+  '@mercuryworkshop/proxy-transports@1.0.2': {}
+
+  '@mercuryworkshop/scramjet-controller@0.0.14(@mercuryworkshop/scramjet@1.1.0)':
+    dependencies:
+      '@fastify/deepmerge': 3.2.4
+      '@mercuryworkshop/proxy-transports': 1.0.2
+      '@mercuryworkshop/scramjet': 1.1.0
+
+  '@mercuryworkshop/scramjet@1.1.0':
+    dependencies:
+      '@mercuryworkshop/bare-mux': 2.1.9
+      dom-serializer: 2.0.0
+      domhandler: 5.0.3
+      domutils: 3.2.2
+      htmlparser2: 10.0.0
+      idb: 8.0.4
+      parse-domain: 8.4.0
+      set-cookie-parser: 2.7.3
+
+  '@types/node@20.19.43':
+    dependencies:
+      undici-types: 6.21.0
+
+  clone-regexp@3.0.0:
+    dependencies:
+      is-regexp: 3.1.0
+
+  convert-hrtime@5.0.0: {}
+
+  dom-serializer@2.0.0:
+    dependencies:
+      domelementtype: 2.3.0
+      domhandler: 5.0.3
+      entities: 4.5.0
+
+  domelementtype@2.3.0: {}
+
+  domhandler@5.0.3:
+    dependencies:
+      domelementtype: 2.3.0
+
+  domutils@3.2.2:
+    dependencies:
+      dom-serializer: 2.0.0
+      domelementtype: 2.3.0
+      domhandler: 5.0.3
+
+  entities@4.5.0: {}
+
+  entities@6.0.1: {}
+
+  function-timeout@0.1.1: {}
+
+  htmlparser2@10.0.0:
+    dependencies:
+      domelementtype: 2.3.0
+      domhandler: 5.0.3
+      domutils: 3.2.2
+      entities: 6.0.1
+
+  idb@8.0.4: {}
+
+  ip-regex@5.0.0: {}
+
+  is-ip@5.0.1:
+    dependencies:
+      ip-regex: 5.0.0
+      super-regex: 0.2.0
+
+  is-regexp@3.1.0: {}
+
+  parse-domain@8.4.0:
+    dependencies:
+      is-ip: 5.0.1
+
+  set-cookie-parser@2.7.3: {}
+
+  super-regex@0.2.0:
+    dependencies:
+      clone-regexp: 3.0.0
+      function-timeout: 0.1.1
+      time-span: 5.1.0
+
+  time-span@5.1.0:
+    dependencies:
+      convert-hrtime: 5.0.0
+
+  typescript@5.9.3: {}
+
+  undici-types@6.21.0: {}

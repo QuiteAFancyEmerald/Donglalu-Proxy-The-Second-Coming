@@ -193,6 +193,117 @@ test("start rejects when the relay can't listen", { skip: !hasBundledBinary && "
   await assert.rejects(relay.start(), /exited before listening/);
 });
 
+// Minimal req/res pair for calling routeRequest directly, with a chosen
+// source IP: enough for the endpoints and the rate limiter, no sockets.
+function fakeReq(ip, host = "example.com", path = "/dlpcc/ice") {
+  return { method: "GET", url: path, headers: { host }, socket: { remoteAddress: ip } };
+}
+
+function fakeRes() {
+  return {
+    statusCode: 200,
+    headers: {},
+    body: "",
+    setHeader(name, value) {
+      this.headers[name] = value;
+    },
+    end(body = "") {
+      this.body = body;
+    },
+  };
+}
+
+test("rate limits the dlpcc endpoints per client IP", () => {
+  const relay = createRelay({ secret, spawn: false, hosts: ["example.com"], rateLimit: 60, rateLimitBurst: 3 });
+  const get = (ip) => {
+    const res = fakeRes();
+    assert.equal(relay.routeRequest(fakeReq(ip), res), true);
+    return res;
+  };
+  for (let i = 0; i < 3; i++) assert.equal(get("198.51.100.1").statusCode, 200);
+  const held = get("198.51.100.1");
+  assert.equal(held.statusCode, 429);
+  assert.ok(Number(held.headers["Retry-After"]) >= 1);
+  assert.equal(JSON.parse(held.body).error, "rate_limited");
+  // A different client has its own bucket.
+  assert.equal(get("198.51.100.2").statusCode, 200);
+});
+
+test("the limiter prefers req.ip over the socket address", () => {
+  const relay = createRelay({ secret, spawn: false, hosts: ["example.com"], rateLimit: 60, rateLimitBurst: 1 });
+  // Express sets req.ip once its trust proxy is configured; the wrapper keys
+  // buckets on it so visitors behind a reverse proxy are limited individually.
+  const withIp = (ip) => ({ ...fakeReq("127.0.0.1"), ip });
+  const first = fakeRes();
+  relay.routeRequest(withIp("203.0.113.9"), first);
+  assert.equal(first.statusCode, 200);
+  const held = fakeRes();
+  relay.routeRequest(withIp("203.0.113.9"), held);
+  assert.equal(held.statusCode, 429);
+  const other = fakeRes();
+  relay.routeRequest(withIp("203.0.113.10"), other);
+  assert.equal(other.statusCode, 200);
+  const socket = fakeRes();
+  relay.routeRequest(fakeReq("192.0.2.7"), socket);
+  assert.equal(socket.statusCode, 200); // without req.ip, the socket is the key
+});
+
+test("rateLimit 0 turns the limiter off", () => {
+  const relay = createRelay({ secret, spawn: false, hosts: ["example.com"], rateLimit: 0 });
+  for (let i = 0; i < 25; i++) {
+    const res = fakeRes();
+    assert.equal(relay.routeRequest(fakeReq("198.51.100.1"), res), true);
+    assert.equal(res.statusCode, 200);
+  }
+});
+
+test("rateLimitGlobal caps minting across all clients", () => {
+  const relay = createRelay({ secret, spawn: false, hosts: ["example.com"], rateLimit: 0, rateLimitGlobal: 2 });
+  const get = (ip) => {
+    const res = fakeRes();
+    relay.routeRequest(fakeReq(ip), res);
+    return res;
+  };
+  assert.equal(get("198.51.100.1").statusCode, 200);
+  assert.equal(get("198.51.100.2").statusCode, 200);
+  assert.equal(get("198.51.100.3").statusCode, 429);
+});
+
+test("DLPCC_* environment variables configure the wrapper", (t) => {
+  process.env.DLPCC_HOSTS = "env.example.com";
+  process.env.DLPCC_RATE_LIMIT = "30";
+  process.env.DLPCC_RATE_LIMIT_BURST = "1";
+  t.after(() => {
+    delete process.env.DLPCC_HOSTS;
+    delete process.env.DLPCC_RATE_LIMIT;
+    delete process.env.DLPCC_RATE_LIMIT_BURST;
+  });
+  const relay = createRelay({ secret, spawn: false });
+  assert.ok(relay.iceConfig("env.example.com"));
+  assert.equal(relay.iceConfig("example.com"), null);
+  const first = fakeRes();
+  relay.routeRequest(fakeReq("198.51.100.1", "env.example.com"), first);
+  assert.equal(first.statusCode, 200);
+  const held = fakeRes();
+  relay.routeRequest(fakeReq("198.51.100.1", "env.example.com"), held);
+  assert.equal(held.statusCode, 429); // the env set a burst of one
+});
+
+test("explicit options beat the environment", (t) => {
+  process.env.DLPCC_RATE_LIMIT = "1";
+  process.env.DLPCC_RATE_LIMIT_BURST = "1";
+  t.after(() => {
+    delete process.env.DLPCC_RATE_LIMIT;
+    delete process.env.DLPCC_RATE_LIMIT_BURST;
+  });
+  const relay = createRelay({ secret, spawn: false, hosts: ["example.com"], rateLimit: 0 });
+  for (let i = 0; i < 25; i++) {
+    const res = fakeRes();
+    relay.routeRequest(fakeReq("198.51.100.1"), res);
+    assert.equal(res.statusCode, 200);
+  }
+});
+
 function freePort() {
   return new Promise((resolve) => {
     const srv = createTcpServer().listen(0, "127.0.0.1", () => {

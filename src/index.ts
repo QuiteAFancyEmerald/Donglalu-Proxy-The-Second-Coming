@@ -47,6 +47,18 @@ export interface RelayOptions {
   forceRelay?: boolean;
   /** Allowed hostnames, "*.example.com" wildcards ok. Empty allows any host. */
   hosts?: string[];
+  /**
+   * Requests per minute per client IP on the dlpcc endpoints, 429 past the
+   * burst. 0 disables. Default 30.
+   */
+  rateLimit?: number;
+  /** How many requests one client IP may spend at once. Default 10. */
+  rateLimitBurst?: number;
+  /**
+   * Requests per minute across all visitors combined, on top of the per-IP
+   * limit; its burst is one minute's worth. 0 disables. Default off.
+   */
+  rateLimitGlobal?: number;
   /** Path prefix for routeRequest(). Default "/dlpcc". */
   basePath?: string;
   /** Only relay to these CIDRs, e.g. your streaming provider's ranges. Default: any public address. */
@@ -88,6 +100,78 @@ function loadClient(): string {
   return (clientSource ??= readFileSync(clientPath, "utf8"));
 }
 
+// A token bucket: `tokens` refills at `rate` per millisecond up to `burst`,
+// stamped with when it was last touched.
+interface Bucket {
+  tokens: number;
+  at: number;
+}
+
+// Takes a token when the bucket holds one, else returns the ms to wait.
+function take(bucket: Bucket, rate: number, burst: number): number {
+  const now = Date.now();
+  bucket.tokens = Math.min(burst, bucket.tokens + (now - bucket.at) * rate);
+  bucket.at = now;
+  if (bucket.tokens >= 1) {
+    bucket.tokens -= 1;
+    return 0;
+  }
+  return Math.ceil((1 - bucket.tokens) / rate);
+}
+
+// Express sets req.ip, honouring its trust proxy setting, which keeps the
+// per-IP buckets right behind a reverse proxy; raw sockets otherwise.
+function clientIp(req: IncomingMessage): string {
+  const ip = (req as { ip?: string }).ip ?? req.socket.remoteAddress ?? "?";
+  return ip.replace(/^::ffff:/i, "").toLowerCase();
+}
+
+// Options from DLPCC_* environment variables, named like the relay's own
+// config: rateLimit -> DLPCC_RATE_LIMIT, lists comma separated, booleans
+// 1/true/0/false.
+function envOptions(): RelayOptions {
+  const env = process.env;
+  const str = (name: string): string | undefined => (env[`DLPCC_${name}`] || undefined);
+  const num = (name: string): number | undefined => {
+    const v = str(name);
+    const n = v === undefined ? NaN : Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const bool = (name: string): boolean | undefined => {
+    const v = str(name);
+    return v === undefined ? undefined : !/^(0|false)$/i.test(v);
+  };
+  const list = (name: string): string[] | undefined => {
+    const v = str(name);
+    return v?.split(",").map((item) => item.trim()).filter(Boolean);
+  };
+  return {
+    enabled: bool("ENABLED"),
+    secret: str("SECRET"),
+    spawn: bool("SPAWN"),
+    binary: str("BINARY"),
+    relayIp: str("RELAY_IP"),
+    relayPorts: str("RELAY_PORTS"),
+    turnListen: str("TURN_LISTEN"),
+    publicHost: str("PUBLIC_HOST"),
+    publicPort: num("PUBLIC_PORT"),
+    tls: bool("TLS"),
+    ttl: num("TTL"),
+    forceRelay: bool("FORCE_RELAY"),
+    hosts: list("HOSTS"),
+    basePath: str("BASE_PATH"),
+    allowPeers: list("ALLOW_PEERS"),
+    denyPeers: list("DENY_PEERS"),
+    allowPrivatePeers: bool("ALLOW_PRIVATE_PEERS"),
+    maxAllocsPerUser: num("MAX_ALLOCS_PER_USER"),
+    maxAllocs: num("MAX_ALLOCS"),
+    rateLimit: num("RATE_LIMIT"),
+    rateLimitBurst: num("RATE_LIMIT_BURST"),
+    rateLimitGlobal: num("RATE_LIMIT_GLOBAL"),
+    logLevel: str("LOG_LEVEL"),
+  };
+}
+
 export class Relay {
   readonly enabled: boolean;
   private readonly opts: RelayOptions;
@@ -100,16 +184,35 @@ export class Relay {
   // start() reports a first launch that fails instead of retrying it.
   private starting = false;
   private backoff = 1000;
+  // Token buckets for the dlpcc endpoints: one per client IP, plus a shared
+  // one when rateLimitGlobal is set. Refilled lazily, swept when the map grows.
+  private readonly perIpRate: number;
+  private readonly perIpBurst: number;
+  private readonly perIp: Map<string, Bucket> | null;
+  private readonly globalRate: number;
+  private readonly globalBurst: number;
+  private readonly globalBucket: Bucket | null;
 
   constructor(opts: RelayOptions = {}) {
-    this.opts = opts;
-    this.enabled = opts.enabled ?? true;
-    if (this.enabled && !opts.secret && opts.spawn === false) {
+    // Explicit options win over DLPCC_* environment variables, which win
+    // over the defaults noted on each option.
+    const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as RelayOptions;
+    this.opts = { ...envOptions(), ...given };
+    this.enabled = this.opts.enabled ?? true;
+    if (this.enabled && !this.opts.secret && this.opts.spawn === false) {
       throw new Error("dlpcc: secret is required when the relay is spawned elsewhere");
     }
     // A relay this process spawns can share a secret made up on the spot.
-    this.secret = opts.secret || randomBytes(32).toString("hex");
-    this.turnListen = opts.turnListen ?? "127.0.0.1:3478";
+    this.secret = this.opts.secret || randomBytes(32).toString("hex");
+    this.turnListen = this.opts.turnListen ?? "127.0.0.1:3478";
+    const perMinute = this.opts.rateLimit ?? 30;
+    this.perIpRate = perMinute / 60_000;
+    this.perIpBurst = Math.max(1, this.opts.rateLimitBurst ?? 10);
+    this.perIp = perMinute > 0 ? new Map() : null;
+    const globalPerMinute = this.opts.rateLimitGlobal ?? 0;
+    this.globalRate = globalPerMinute / 60_000;
+    this.globalBurst = Math.max(1, globalPerMinute);
+    this.globalBucket = globalPerMinute > 0 ? { tokens: this.globalBurst, at: Date.now() } : null;
   }
 
   /**
@@ -218,6 +321,14 @@ export class Relay {
     if (path !== `${base}/ice` && path !== `${base}/client.js`) return false;
 
     res.setHeader("Cache-Control", "no-store");
+    const wait = this.throttle(req);
+    if (wait > 0) {
+      res.statusCode = 429;
+      res.setHeader("Retry-After", String(Math.max(1, Math.ceil(wait / 1000))));
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "rate_limited" }));
+      return true;
+    }
     if (path.endsWith("/ice")) {
       const config = this.iceConfig(req);
       if (!config) return deny(res);
@@ -230,6 +341,33 @@ export class Relay {
       res.end(script);
     }
     return true;
+  }
+
+  // The gate for the dlpcc endpoints: milliseconds to wait before serving, or
+  // 0 to serve now. The per-IP bucket runs first, so a client it holds back
+  // doesn't also spend the shared one.
+  private throttle(req: IncomingMessage): number {
+    if (this.perIp) {
+      const ip = clientIp(req);
+      let bucket = this.perIp.get(ip);
+      if (!bucket) {
+        // Swept only as the map grows, so a long-lived server is bounded by
+        // the clients seen in the last hour and a sweep costs almost nothing.
+        if (this.perIp.size > 4096) {
+          const cutoff = Date.now() - 3_600_000;
+          for (const [seen, b] of this.perIp) if (b.at < cutoff) this.perIp.delete(seen);
+        }
+        bucket = { tokens: this.perIpBurst, at: Date.now() };
+        this.perIp.set(ip, bucket);
+      }
+      const wait = take(bucket, this.perIpRate, this.perIpBurst);
+      if (wait > 0) return wait;
+    }
+    if (this.globalBucket) {
+      const wait = take(this.globalBucket, this.globalRate, this.globalBurst);
+      if (wait > 0) return wait;
+    }
+    return 0;
   }
 
   private parseHost(raw: string | undefined): { name: string; port?: number } | null {

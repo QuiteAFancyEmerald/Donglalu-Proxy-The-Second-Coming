@@ -47,11 +47,14 @@ jobs:
           if-no-files-found: error
 
   # Tag v1.2.3 (matching package.json's version) to publish to npm and
-  # attach the binaries to a GitHub release. Needs an NPM_TOKEN secret.
+  # attach the binaries to a GitHub release. Publishes with npm trusted
+  # publishing (OIDC), so there is no npm token: on npmjs.com, add this repo,
+  # workflow build.yml and environment "release" as the package's trusted publisher.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [test, binaries]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
       id-token: write
@@ -66,11 +69,11 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: Check tag matches package.json
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      # Trusted publishing needs npm 11.5.1+; Node 22 ships npm 10.
+      - run: npm install -g npm@latest
       - run: npm ci
       # prepack builds every binary and the wrapper.
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: GitHub release
         run: |
           mkdir release
