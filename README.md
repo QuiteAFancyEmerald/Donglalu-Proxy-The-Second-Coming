@@ -246,6 +246,7 @@ Every option can also be set by environment variable, named like the relay's own
 | `maxAllocsPerUser` | `8` | Concurrent relays per credential, 0 for no limit. |
 | `maxAllocs` | `1000` | Concurrent relays in total, 0 for no limit. |
 | `relayPorts` | `49152-65535` | UDP range for relayed media. |
+| `upstreamProxy` | off | `socks5://[user:pass@]host:port` to send relayed media out through, so peers see the proxy's IP instead of the server's. See below. |
 | `turnListen` | a free port once attached, else `127.0.0.1:3478` | The relay's own TCP listener on loopback. Only matters with nginx. |
 | `publicHost` | visitor's host | Host in TURN URLs. Only for sites behind a CDN; see above. |
 | `publicPort` | visitor's port | Port in the TURN URLs browsers get (`443` without `attach`). |
@@ -254,6 +255,22 @@ Every option can also be set by environment variable, named like the relay's own
 | `spawn` | `true` | `false` in all but one process when several share a relay. |
 | `binary` | bundled | Path to your own `dlpcc-relay` build. |
 | `logLevel` | `warn` | error, warn, info, debug, trace. |
+
+### Upstream proxy
+
+Some services refuse media from datacenter IPs. `upstreamProxy`
+(`DLPCC_UPSTREAM_PROXY`) sends every relayed connection out through a
+SOCKS5 proxy, such as a residential one, and hands browsers the proxy's
+address as their relay, so the service only ever sees the proxy.
+
+- The proxy has to support **UDP ASSOCIATE**. Most SOCKS5 proxies only do
+  TCP; with one of those, allocations fail and the relay logs why.
+- Leave out `user:pass@` for proxies that whitelist by IP, and whitelist
+  the server's IP, not your own.
+- Each relayed connection holds its own association, so `maxAllocs` also
+  caps how many the proxy sees at once.
+- The proxy's replies come back on the relay's own ports, so the usual
+  `relayPorts` firewall rule covers them.
 
 ## nginx (optional)
 
