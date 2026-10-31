@@ -26,6 +26,9 @@ func main() {
 		log.Fatalf("dlpcc-relay: %v", err)
 	}
 	log.Printf("dlpcc-relay: turn on %s, relaying as %s ports %d-%d", cfg.TURNListen, cfg.RelayIP, cfg.RelayMinPort, cfg.RelayMaxPort)
+	if cfg.UpstreamProxy != nil {
+		log.Printf("dlpcc-relay: media leaves through socks5 %s", cfg.UpstreamProxy.Addr)
+	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)

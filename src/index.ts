@@ -75,6 +75,12 @@ export interface RelayOptions {
   maxAllocsPerUser?: number;
   /** Concurrent relays in total, 0 for no limit. Default 1000. */
   maxAllocs?: number;
+  /**
+   * Send relayed media out through this SOCKS5 proxy instead of straight
+   * from the server, so peers see the proxy's IP:
+   * "socks5://[user:pass@]host:port". It must support UDP ASSOCIATE. Default off.
+   */
+  upstreamProxy?: string;
   /** Relay log level: error, warn, info, debug, trace. Default "warn". */
   logLevel?: string;
 }
@@ -168,6 +174,7 @@ function envOptions(): RelayOptions {
     rateLimit: num("RATE_LIMIT"),
     rateLimitBurst: num("RATE_LIMIT_BURST"),
     rateLimitGlobal: num("RATE_LIMIT_GLOBAL"),
+    upstreamProxy: str("UPSTREAM_PROXY"),
     logLevel: str("LOG_LEVEL"),
   };
 }
@@ -416,6 +423,7 @@ export class Relay {
         DLPCC_ALLOW_PRIVATE_PEERS: String(o.allowPrivatePeers ?? false),
         DLPCC_MAX_ALLOCS_PER_USER: String(o.maxAllocsPerUser ?? 8),
         DLPCC_MAX_ALLOCS: String(o.maxAllocs ?? 1000),
+        DLPCC_UPSTREAM_PROXY: o.upstreamProxy ?? "",
         DLPCC_LOG_LEVEL: o.logLevel ?? "warn",
       },
     });

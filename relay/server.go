@@ -32,6 +32,16 @@ func Start(cfg *Config) (*Server, error) {
 		return nil, fmt.Errorf("turn listener: %w", err)
 	}
 
+	var relays turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
+		RelayAddress: cfg.RelayIP,
+		Address:      cfg.RelayBind,
+		MinPort:      cfg.RelayMinPort,
+		MaxPort:      cfg.RelayMaxPort,
+	}
+	if cfg.UpstreamProxy != nil {
+		relays = socksGenerator{relays, cfg.UpstreamProxy}
+	}
+
 	s.turn, err = turn.NewServer(turn.ServerConfig{
 		Realm:         cfg.Realm,
 		LoggerFactory: logs,
@@ -47,12 +57,7 @@ func Start(cfg *Config) (*Server, error) {
 		},
 		ListenerConfigs: []turn.ListenerConfig{{
 			Listener: ln,
-			RelayAddressGenerator: selfGenerator{&turn.RelayAddressGeneratorPortRange{
-				RelayAddress: cfg.RelayIP,
-				Address:      cfg.RelayBind,
-				MinPort:      cfg.RelayMinPort,
-				MaxPort:      cfg.RelayMaxPort,
-			}, cfg},
+			RelayAddressGenerator: selfGenerator{relays, cfg},
 			PermissionHandler: func(_ net.Addr, peerIP net.IP) bool {
 				return cfg.peerAllowed(peerIP)
 			},

@@ -38,6 +38,10 @@ type Config struct {
 	MaxAllocsPerUser  int
 	MaxAllocs         int
 
+	// UpstreamProxy sends relayed media out through a SOCKS5 proxy with UDP
+	// support instead of straight from this server.
+	UpstreamProxy *socksProxy
+
 	LogLevel string
 }
 
@@ -70,6 +74,7 @@ func Load(args []string) (*Config, error) {
 	allowPrivate := str("allow-private-peers", "false", "relay to private, loopback and the relay's own addresses too; testing only")
 	perUser := str("max-allocs-per-user", "8", "concurrent allocations per credential, 0 = unlimited")
 	maxAllocs := str("max-allocs", "1000", "concurrent allocations in total, 0 = unlimited")
+	upstreamProxy := str("upstream-proxy", "", "socks5://[user:pass@]host:port with UDP support to send relayed media out through")
 	logLevel := str("log-level", "warn", "pion log level: error, warn, info, debug, trace")
 
 	if err := fs.Parse(args); err != nil {
@@ -109,6 +114,9 @@ func Load(args []string) (*Config, error) {
 	}
 	if cfg.MaxAllocs, err = strconv.Atoi(*maxAllocs); err != nil {
 		return nil, fmt.Errorf("max-allocs: %w", err)
+	}
+	if cfg.UpstreamProxy, err = parseSocksProxy(*upstreamProxy); err != nil {
+		return nil, fmt.Errorf("upstream-proxy: %w", err)
 	}
 
 	return cfg, nil
